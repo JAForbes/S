@@ -61,6 +61,8 @@ test('batch', t => {
     t.end()
 })
 
+// we don't track when computations are read _yet_
+// so this fails
 test.skip('nested computations', t => {
     S.stats.ticks = 0
     let a = S.data(2);
