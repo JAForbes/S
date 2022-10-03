@@ -330,3 +330,62 @@ test('sample', t => {
 
     t.end()
 })
+
+
+test.skip('generators?', t => {
+    // the idea is, auto dependency tracking is incompatible with
+    // async code, because while you await some task to complete
+    // another computation may have overridden your active context
+    // and references will be misattributed to that other context
+    let a$ = S.data(1)
+    let b$ = S.data(2)
+
+    // but generators, beautiful generators suspend their context
+    // and then can be resumed, and we can set those global
+    // variables as and when each generator is suspended
+    // and resumed
+    let c = generator(function * (){ 
+        let a = a$()
+
+        // e.g. here we pause the context while
+        // this async logic runs
+        yield new Promise( Y => setTimeout(Y, 100) )
+        // here we resume it
+
+        // you can imagine setting active=null when we yield
+        // and active=generator when we resume
+
+        // that means when b$ is referenced here
+        // we can associate it with this context
+        // and if it later changes, restart the 
+        // generator
+        let b = b$()
+
+        return a + b
+    })
+
+    // here is a synchronous computation
+    // we reference an async computation
+    // problem to be solved: what is the value of c when
+    // the generator has not yet completed
+    // I guess it is just undefined, that's how S already
+    // works
+    let d = computation(() => {
+        return c() + 1
+    })
+
+    // another problem to be solved, ticks
+    // rely on a set of computations to rerun
+    // and a dependency look up
+
+    // but while we're awaiting an async context
+    // we may want to run other ticks
+    // we may need to give up on the concept 
+    // of single instance ticks in order to support
+    // async control flow?
+
+    // or I suppose if a dependency re-evaluates
+    // we simply cancel the existing async
+    // computation, and ticks, remain
+    // sync
+})
