@@ -63,21 +63,53 @@ test('batch', t => {
 
 // we don't track when computations are read _yet_
 // so this fails
-test.skip('nested computations', t => {
+test('nested computations', t => {
     S.stats.ticks = 0
     let a = S.data(2);
     let b = S.data(3);
+
+    // 6. c will be in sync if a or b changes
+    // but these inner computations will run
+    // wastefully multiple times
+    // also there is no guarantee of order either
     let c = S.computation(() => {
+
+        // 4. c$ updates whenever a or b changes
+        // too
         let c$ =  S.computation(() => {
 
+            // 1. the value of c$$ is updated
             let c$$ = S.computation(() => {
+                // 2. when a or b updates
                 return a() + b()
             })
 
+            // 3. and as it is referenced here
+            // the value of the outer computation needs to re-evaluate
             return c$$()
         })
+
+        // 5. and as c$ is evaluated here, the outer block
+        // needs to update when a or b changes
         return c$()
     })
+    // 7. this is correct, but wasteful, because we evaluate c$$ 3 times
+    // one time per computation layer, we could instead say, hey c$$ updated
+    // update the outer layer one time
+    //
+    // 8. we may also have a problem where each inner computation running
+    // creates duplicate computations, again, this is "correct" but wasteful
+    // as we only want 1 per source computation
+    //
+    // 9. I do not know a way around this, and yet, this seems like
+    // a pretty normal thing to do, not all at once, but defining data
+    // in a computation that happens to be inside another computation
+    // e.g. in Solid aren't all components computations, or is only the view...
+    //
+    // 10. But maybe that is fine, maybe components aren't wrapped in a
+    // computation, only the view, but I was under the impression
+    // components were re-evaluated if the parent component re-ran, how
+    // does that work?
 
     t.equals(c(), a() + b(), 'c() = a() + b()')
     t.equals(c(), 5, 'smoke')
