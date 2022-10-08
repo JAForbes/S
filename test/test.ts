@@ -1,5 +1,5 @@
-import * as S from '../lib/index.js'
 import test from 'tape'
+import * as S from '../lib/index.js'
 
 test('data', t => {
     const a = S.data(1)
@@ -44,22 +44,23 @@ test('batch', t => {
     const b = S.data(2)
 
     let c = S.computation(() => {
-        return a() + b()
+        return a()! + b()!
     })
 
     t.equals(S.stats.ticks, 0, 'No writes yet, so no ticks')
 
-    S.batch(() => {
+    S.freeze(() => {
         a(2)
         b(3)
     })
 
     t.equals(S.stats.ticks, 1, '1 batch write, so 1 tick')
 
-    t.equals(c(), a() + b(), 'c = a + b')
+    t.equals(c(), a()! + b()!, 'c = a + b')
 
     t.end()
 })
+
 
 // we don't track when computations are read _yet_
 // so this fails
@@ -81,7 +82,7 @@ test('nested computations', t => {
             // 1. the value of c$$ is updated
             let c$$ = S.computation(() => {
                 // 2. when a or b updates
-                return a() + b()
+                return a()! + b()!
             })
 
             // 3. and as it is referenced here
@@ -111,18 +112,19 @@ test('nested computations', t => {
     // components were re-evaluated if the parent component re-ran, how
     // does that work?
 
-    t.equals(c(), a() + b(), 'c() = a() + b()')
+    t.equals(c(), a()! + b()!, 'c() = a() + b()')
     t.equals(c(), 5, 'smoke')
     
     a(7)
     c();
 
-    t.equals(c(), a() + b(), 'c() = a() + b()')
+    t.equals(c(), a()! + b()!, 'c() = a() + b()')
     t.equals(c(), 10, 'smoke')
 
     t.equals(S.stats.ticks, 1, '1 write = 1 tick')
     t.end()
 })
+
 
 test('data setter fn', t => {
     let a = S.data(1)
@@ -135,17 +137,18 @@ test('data setter fn', t => {
 
     t.equals(renders, 1, '1 render for initial value')
 
-    a( x => x + 1 )
+    a( x => x! + 1 )
 
     t.equals(renders, 2, '1 write = 1 render')
     t.equals(a(), 2, 'fn setter works')
     t.end()
 })
 
+
 test('components?', t => {
     S.stats.ticks = 0
 
-    function Button({ onclick }, text){
+    function Button({ onclick }: { onclick: VoidFunction }, text: string){
         let redraws = 0
         let out = {
             get redraws(){
@@ -160,7 +163,7 @@ test('components?', t => {
         return out
     }
 
-    function ShowCount({ count }){
+    function ShowCount({ count }: { count: S.StreamAccessor<number> }){
         
         let redraws = 0
         let out = {
@@ -170,7 +173,8 @@ test('components?', t => {
             view: S.computation(() => {
                 redraws++
                 return 'The count is ' + count()
-            })
+            }),
+            onclick(){}
         }
         return out;
     }
@@ -189,10 +193,11 @@ test('components?', t => {
                 redraws++
                 return [
                     ShowCount({ count }),
-                    Button({ onclick: () => count( x => x + 1) }, '+'),
-                    Button({ onclick: () => count( x => x - 1) }, '-')
+                    Button({ onclick: () => count( x => x! + 1) }, '+'),
+                    Button({ onclick: () => count( x => x! - 1) }, '-')
                 ]
-            })
+            }),
+            onclick(){}
         }
 
         return out;
@@ -200,9 +205,9 @@ test('components?', t => {
 
     let counter = Counter()
 
-    let showCount = () => counter.view()[0]
-    let inc = () => counter.view()[1]
-    let dec = () => counter.view()[2]
+    let showCount = () => counter.view()![0]
+    let inc = () => counter.view()![1]
+    let dec = () => counter.view()![2]
     
     t.equals(showCount().view(), 'The count is 0', 'ShowCount')
     t.equals(inc().view(), '+', '+')
@@ -226,14 +231,17 @@ test('components?', t => {
     t.equals(inc().redraws, 1, 'inc.redraws = 1')
     t.equals(dec().redraws, 1, 'dec.redraws = 1')
 
-    S.batch(() => {
+    // because time is froze
+    // we're just decrementing the same value
+    // multiple times, so we get 0 instead of -3
+    S.freeze(() => {
         dec().onclick()
         dec().onclick()
         dec().onclick()
         dec().onclick()
     })
 
-    t.equals(showCount().view(), 'The count is -3', 'ShowCount')
+    t.equals(showCount().view(), 'The count is 0', 'ShowCount')
     t.equals(inc().view(), '+', '+')
     t.equals(dec().view(), '-', '-')
     t.equals(S.stats.ticks, 2, '2 write, 2 tick')
@@ -246,6 +254,7 @@ test('components?', t => {
     t.end()
 })
 
+
 test('define data inside a computation', t => {
     S.stats.ticks = 0
 
@@ -253,13 +262,14 @@ test('define data inside a computation', t => {
         let a = S.data(2)
         let b = S.data(3)
 
-        let c = S.computation(() => a() + b())
+        let c = S.computation(() => a()! + b()!)
 
-        t.equals(c(), a() + b(), 'c = a + b')
+        t.equals(c(), a()! + b()!, 'c = a + b')
 
         t.end()
     })
 })
+
 
 test('cleanup', t => {
 
@@ -268,11 +278,11 @@ test('cleanup', t => {
         S.stats.ticks = 0
     
         let domNode = S.data('#a')
-        let listeners = {}
-        let addEventListener = (event, node, f) => {
+        let listeners : Record<string,VoidFunction> = {}
+        let addEventListener = (event:string, node:string, f:VoidFunction) => {
             listeners[node+'.on'+event] = f
         }
-        let removeEventListener = (event, node) => {
+        let removeEventListener = (event:string, node:string) => {
             console.log('deleteing listener for ',node,event)
             delete listeners[node+'.on'+event]
         }
@@ -281,10 +291,10 @@ test('cleanup', t => {
     
             let f = () => {}
             let node = domNode()
-            addEventListener('click', node, f)
+            addEventListener('click', node!, f)
     
             S.cleanup(() => {
-                removeEventListener('click', node, f)
+                removeEventListener('click', node!)
             })
         })
     
@@ -301,6 +311,7 @@ test('cleanup', t => {
     t.end()
 })
 
+
 test('sample', t => {
     S.stats.ticks = 0
     S.stats.computations.evaluated = 0
@@ -309,10 +320,10 @@ test('sample', t => {
     let b = S.data(2)
 
     let c = S.computation(() => {
-        return S.sample(a) + b()
+        return S.sample(a)! + b()!
     })
 
-    t.equal(c(), a() + b(), 'c = a + b')
+    t.equal(c(), a()! + b()!, 'c = a + b')
     t.equals(S.stats.ticks, 0, 'No writes, no ticks')
 
     a(100)
@@ -320,19 +331,18 @@ test('sample', t => {
     t.equals(S.stats.ticks, 1, 'Write = tick but...')
     t.equals(S.stats.computations.evaluated, 0, 'the tick didn\'t do anything')
 
-    t.notEqual(c(), a() + b(), 'c <> a + b')
+    t.notEqual(c(), a()! + b()!, 'c <> a + b')
 
     b(1)
     t.equals(S.stats.ticks, 2, 'b written too, so tick occurred')
 
-    t.equal(c(), a() + b(), 'c = a + b')
+    t.equal(c(), a()! + b()!, 'c = a + b')
     t.equals(S.stats.computations.evaluated, 1, 'the tick evaluated the computation because a non sampled dependency was written to')
 
     t.end()
 })
 
-
-test.skip('generators?', t => {
+test('generators?', async t => {
     // the idea is, auto dependency tracking is incompatible with
     // async code, because while you await some task to complete
     // another computation may have overridden your active context
@@ -340,16 +350,16 @@ test.skip('generators?', t => {
     let a$ = S.data(1)
     let b$ = S.data(2)
 
-    // but generators, beautiful generators suspend their context
+    // but generators suspend their context
     // and then can be resumed, and we can set those global
     // variables as and when each generator is suspended
     // and resumed
-    let c = generator(function * (){ 
+    let c = S.generator<number>(function * (){ 
         let a = a$()
 
         // e.g. here we pause the context while
         // this async logic runs
-        yield new Promise( Y => setTimeout(Y, 100) )
+        yield new Promise( Y => setTimeout(Y, 10) )
         // here we resume it
 
         // you can imagine setting active=null when we yield
@@ -361,7 +371,7 @@ test.skip('generators?', t => {
         // generator
         let b = b$()
 
-        return a + b
+        return a! + b!
     })
 
     // here is a synchronous computation
@@ -370,8 +380,9 @@ test.skip('generators?', t => {
     // the generator has not yet completed
     // I guess it is just undefined, that's how S already
     // works
-    let d = computation(() => {
-        return c() + 1
+    let d = S.computation(() => {
+        console.log(c(), c()! +1)
+        return (c() ?? 0) + 1
     })
 
     // another problem to be solved, ticks
@@ -388,4 +399,29 @@ test.skip('generators?', t => {
     // we simply cancel the existing async
     // computation, and ticks, remain
     // sync
+
+    S.computation(() => {
+        console.log('c()', c())
+    })
+    S.computation(() => {
+        console.log('a$()', a$())
+    })
+    S.computation(() => {
+        console.log('b$()', b$())
+    })
+    S.computation(() => {
+        console.log('d()', d())
+    })
+
+    await new Promise( Y => setTimeout(Y, 10) )
+
+    console.log('setting a')
+    a$(2)
+
+    await new Promise( Y => setTimeout(Y, 20) )
+    console.log('setting b')
+    b$(4)
+    await new Promise( Y => setTimeout(Y, 30) )
+
+    t.end()
 })

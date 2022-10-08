@@ -11,7 +11,8 @@
             "skipFiles": [
                 "<node_internals>/**"
             ],
-            "program": "${workspaceFolder}/test/test.js"
+            "program": "${workspaceFolder}/lib/test.ts",
+            "runtimeArgs": ["--loader", "ts-node/esm"]
         }
     ]
 }
