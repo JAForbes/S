@@ -29,21 +29,9 @@ type StreamInternal<T> =
     | DataInternal<T> 
     | ComputationInternal<T>
 
-type Initiator = 
-    { type: 'Initiator'
-    , tag: 'GeneratorComputation' 
-    , value: GeneratorComputationInternal<unknown>
-    }
-    | 
-    { type: 'Initiator'
-    , tag: 'Data[]'
-    , value: DataInternal<unknown>[]
-    }
-
 type State = 'frozen' | 'propagating' | 'idle'
 
 let state : State = 'idle';
-// export let initiator : Initiator | null = null;
 let toRun = new Set<ComputationInternal<unknown>>();
 let dependents = new WeakMap<StreamInternal<unknown>, Set<ComputationInternal<unknown>>>();
 let cleanups = new Map<ComputationInternal<unknown>, Set<VoidFunction>>;
@@ -55,9 +43,6 @@ let children = new WeakMap<ComputationInternal<unknown>, Set<ComputationInternal
 
 export class SError extends Error {}
 export class CleanupWithoutComputationContext extends SError {}
-export class DuplicateGeneratorInitiatior extends SError {}
-export class MixedInitiatorType extends SError {}
-export class UnexpectedInitiatorClause extends SError {}
 export class Conflict extends SError {}
 export class FreezingWhilePropagating extends SError {}
 
@@ -91,30 +76,6 @@ export function xet<K extends object, V>(
 
 	return value
 }
-
-// function addInitiator(stream: Data<unknown> | GeneratorComputation<unknown> ){
-//     if ( initiator != null && stream.tag == 'GeneratorComputation' ) {
-//         throw new DuplicateGeneratorInitiatior()
-//     } else if ( initiator != null && stream.tag === 'GeneratorComputation' ) {
-//         initiator = {
-//             type: 'Initiator',
-//             tag: 'GeneratorComputation',
-//             value: stream
-//         }
-//     } else if ( stream.tag === 'Data' && initiator?.tag === 'GeneratorComputation' ) {
-//         throw new MixedInitiatorType()
-//     } else if ( initiator != null && stream.tag === 'Data' && initiator.tag === 'Data[]' ) {
-//         initiator.value.push(stream)
-//     } else if ( initiator == null && stream.tag === 'Data' ) {
-//         initiator = {
-//             type: 'Initiator',
-//             tag: 'Data[]',
-//             value: [stream]
-//         }
-//     } else {
-//         throw new UnexpectedInitiatorClause()
-//     }
-// }
 
 function computeDependents(stream: StreamInternal<unknown>){
     let stack : ComputationInternal<unknown> [] = []
@@ -190,7 +151,6 @@ export function data<T>(value?: T){
             }
 
             if ( state === 'frozen' || state === 'idle' ) {
-                // addInitiator(stream)
                 computeDependents(stream)
             }
 
@@ -290,7 +250,6 @@ export function generator<T>( _fn: any ) : ComputationAccessor<T> {
                 computeDependents(stream)
                 
                 if ( state == 'idle' ) {
-                    // addInitiator(stream)
                     streamsToResolve.add(stream)
                     tick()
                 } 
@@ -398,8 +357,6 @@ export function tick(){
     state = 'idle'
 
     let next = nextTicks.shift()
-
-    // initiator = null
     
     
     if ( next ) {
