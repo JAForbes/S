@@ -1,4 +1,4 @@
-export type SyncComputation<T> = 
+type SyncComputationInternal<T> = 
     { type: 'Stream'
     , tag: 'SyncComputation'
     , value?: T
@@ -6,7 +6,7 @@ export type SyncComputation<T> =
     , compute: () => void;
     }
 
-export type GeneratorComputation<T> = 
+type GeneratorComputationInternal<T> = 
     { type: 'Stream'
     , tag: 'GeneratorComputation'
     , value?: T
@@ -14,44 +14,44 @@ export type GeneratorComputation<T> =
     , compute: () => void;
     }
 
-export type Computation<T> = 
-    | SyncComputation<T> 
-    | GeneratorComputation<T>
+type ComputationInternal<T> = 
+    | SyncComputationInternal<T> 
+    | GeneratorComputationInternal<T>
 
-export type Data<T> = 
+type DataInternal<T> = 
     { type: 'Stream'
     , tag: 'Data'
     , value?: T
     , next?: T 
     }
 
-export type Stream<T> = 
-    | Data<T> 
-    | Computation<T>
+type StreamInternal<T> = 
+    | DataInternal<T> 
+    | ComputationInternal<T>
 
-export type Initiator = 
+type Initiator = 
     { type: 'Initiator'
     , tag: 'GeneratorComputation' 
-    , value: GeneratorComputation<unknown>
+    , value: GeneratorComputationInternal<unknown>
     }
     | 
     { type: 'Initiator'
     , tag: 'Data[]'
-    , value: Data<unknown>[]
+    , value: DataInternal<unknown>[]
     }
 
-export type State = 'frozen' | 'propagating' | 'idle'
+type State = 'frozen' | 'propagating' | 'idle'
 
-export let state : State = 'idle';
+let state : State = 'idle';
 // export let initiator : Initiator | null = null;
-export let toRun = new Set<Computation<unknown>>();
-export let dependents = new WeakMap<Stream<unknown>, Set<Computation<unknown>>>();
-export let cleanups = new Map<Computation<unknown>, Set<VoidFunction>>;
-export let active : Computation<unknown>[] = []
-export let streamsToResolve = new Set<Stream<unknown>>;
-export let nextTicks : Array<() => any> = [];
-export let doNotReCompute = new Set<Computation<unknown>>();
-export let children = new WeakMap<Computation<unknown>, Set<Computation<unknown>>>();
+let toRun = new Set<ComputationInternal<unknown>>();
+let dependents = new WeakMap<StreamInternal<unknown>, Set<ComputationInternal<unknown>>>();
+let cleanups = new Map<ComputationInternal<unknown>, Set<VoidFunction>>;
+let active : ComputationInternal<unknown>[] = []
+let streamsToResolve = new Set<StreamInternal<unknown>>;
+let nextTicks : Array<() => any> = [];
+let doNotReCompute = new Set<ComputationInternal<unknown>>();
+let children = new WeakMap<ComputationInternal<unknown>, Set<ComputationInternal<unknown>>>();
 
 export class SError extends Error {}
 export class CleanupWithoutComputationContext extends SError {}
@@ -68,10 +68,10 @@ export const stats = {
     }
 }
 
-export interface StreamAccessor<T> {
-    (): T | undefined;
-    (x:T) : T | undefined;
-    ( fn: (( x?: T ) => T ) ) : T | undefined;
+export interface Signal<T, U=T> {
+    (): U;
+    (x:T) : U;
+    ( fn: (( x: U ) => U ) ) : U;
 }
 
 export type AnyMap<K extends object,V> = WeakMap<K, V> | Map<K, V>;
@@ -116,13 +116,13 @@ export function xet<K extends object, V>(
 //     }
 // }
 
-function computeDependents(stream: Stream<unknown>){
-    let stack : Computation<unknown> [] = []
+function computeDependents(stream: StreamInternal<unknown>){
+    let stack : ComputationInternal<unknown> [] = []
 
     stack.push(...xet(dependents, stream, () => new Set()))
 
     while (stack.length) {
-        let x = stack.shift() as Computation<unknown>;
+        let x = stack.shift() as ComputationInternal<unknown>;
 
         if (x.tag !== 'GeneratorComputation') {
             stack.push(...xet(dependents, x, () => new Set()))
@@ -136,7 +136,7 @@ function computeDependents(stream: Stream<unknown>){
     }
 }
 
-function cleanupChildren(stream: Computation<unknown>){
+function cleanupChildren(stream: ComputationInternal<unknown>){
     // the active list captures all the parent scopes
     // of a computation
     // if each computation simply recorded it we could
@@ -149,22 +149,25 @@ function cleanupChildren(stream: Computation<unknown>){
     // and run the clean ups, and ban them from
     // the next tick
 
-    let xs = [...xet(children, stream, () => new Set<Computation<unknown>>() )]
+    let xs = [...xet(children, stream, () => new Set<ComputationInternal<unknown>>() )]
     for( let x of xs ) {
         doNotReCompute.add(x)
     }
 }
 
-export function data<T>(value?: T) : StreamAccessor<T> {
+
+export function data<T>(value: T) : Signal<T>;
+export function data<T>(value?: T) : Signal<T | undefined>
+export function data<T>(value?: T){
     
-    const stream : Data<T> = {
+    const stream : DataInternal<T> = {
         type: 'Stream',
         tag: 'Data',
         next: value,
         value
     }
 
-    let accessor : StreamAccessor<T> = (...args: T[] | [(( x?: T ) => T )] ) => {
+    let accessor = (...args: T[] | [(( x?: T ) => T )] ) => {
 
         if ( args.length ) {
 
@@ -217,7 +220,7 @@ type SyncComputationVisitor<T> =
 type ComputationAccessor<T> = () => T | undefined;
 
 export function computation<T>( fn: SyncComputationVisitor<T> ) : ComputationAccessor<T> {
-    const stream : SyncComputation<T> = {
+    const stream : SyncComputationInternal<T> = {
         type: "Stream",
         tag: 'SyncComputation',
         compute(){
@@ -251,19 +254,29 @@ export function computation<T>( fn: SyncComputationVisitor<T> ) : ComputationAcc
     }
 }
 
-type GeneratorComputationVisitor<T> = () => Generator<T, T, any>
+// type GeneratorComputationVisitor<T> = () => Generator<T, T, any>
 
-export function generator<T>( fn: any ) : ComputationAccessor<T> {
+interface SGeneratorVisitor<T> {
+    () : SIterator<T>
+}
+
+interface SIterator<T> {
+    next(x: any) : { done: boolean, value: any }
+    return(x: T) : T
+}
+
+export function generator<T>( _fn: any ) : ComputationAccessor<T> {
 
     let iteration: Promise<T | undefined> | null;
-    let it :  ReturnType<typeof fn> | null;
+    let it :  SIterator<T> | null;
+    let fn = _fn as SGeneratorVisitor<T>
     let sentinel = {};
-    const stream : GeneratorComputation<T> = {
+    const stream : GeneratorComputationInternal<T> = {
         type: "Stream",
         tag: "GeneratorComputation",
         compute(){
             if (iteration) {
-                it!.return(sentinel);
+                it!.return(sentinel as T);
             }
 
             it = fn()
@@ -287,7 +300,7 @@ export function generator<T>( fn: any ) : ComputationAccessor<T> {
         }
     }
 
-    async function iterate(it: Generator<T>){
+    async function iterate<T>(it: SIterator<T>){
         let value, done, next;
         do {
             active.unshift(stream)
@@ -395,7 +408,7 @@ export function tick(){
 }
 
 
-export function sample<T>(signal: StreamAccessor<T>){
+export function sample<T>(signal: Signal<T>){
     let oldActive = active
     active = [];
     let value = signal()

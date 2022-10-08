@@ -4,6 +4,7 @@ import * as S from '../lib/index.js'
 test('data', t => {
     const a = S.data(1)
     const b = S.data(2)
+    const c = S.data<number>();
 
     t.equals(a(), 1, 'data is a getter and a setter 1/2')
     t.equals(b(), 2, 'data is a getter and a setter 1/2')
@@ -44,7 +45,7 @@ test('batch', t => {
     const b = S.data(2)
 
     let c = S.computation(() => {
-        return a()! + b()!
+        return a() + b()
     })
 
     t.equals(S.stats.ticks, 0, 'No writes yet, so no ticks')
@@ -56,7 +57,7 @@ test('batch', t => {
 
     t.equals(S.stats.ticks, 1, '1 batch write, so 1 tick')
 
-    t.equals(c(), a()! + b()!, 'c = a + b')
+    t.equals(c(), a() + b(), 'c = a + b')
 
     t.end()
 })
@@ -82,7 +83,7 @@ test('nested computations', t => {
             // 1. the value of c$$ is updated
             let c$$ = S.computation(() => {
                 // 2. when a or b updates
-                return a()! + b()!
+                return a() + b()
             })
 
             // 3. and as it is referenced here
@@ -112,13 +113,13 @@ test('nested computations', t => {
     // components were re-evaluated if the parent component re-ran, how
     // does that work?
 
-    t.equals(c(), a()! + b()!, 'c() = a() + b()')
+    t.equals(c(), a() + b(), 'c() = a() + b()')
     t.equals(c(), 5, 'smoke')
     
     a(7)
     c();
 
-    t.equals(c(), a()! + b()!, 'c() = a() + b()')
+    t.equals(c(), a() + b(), 'c() = a() + b()')
     t.equals(c(), 10, 'smoke')
 
     t.equals(S.stats.ticks, 1, '1 write = 1 tick')
@@ -137,7 +138,7 @@ test('data setter fn', t => {
 
     t.equals(renders, 1, '1 render for initial value')
 
-    a( x => x! + 1 )
+    a( x => x + 1 )
 
     t.equals(renders, 2, '1 write = 1 render')
     t.equals(a(), 2, 'fn setter works')
@@ -163,7 +164,7 @@ test('components?', t => {
         return out
     }
 
-    function ShowCount({ count }: { count: S.StreamAccessor<number> }){
+    function ShowCount({ count }: { count: S.Signal<number> }){
         
         let redraws = 0
         let out = {
@@ -193,8 +194,8 @@ test('components?', t => {
                 redraws++
                 return [
                     ShowCount({ count }),
-                    Button({ onclick: () => count( x => x! + 1) }, '+'),
-                    Button({ onclick: () => count( x => x! - 1) }, '-')
+                    Button({ onclick: () => count( x => x + 1) }, '+'),
+                    Button({ onclick: () => count( x => x - 1) }, '-')
                 ]
             }),
             onclick(){}
@@ -262,9 +263,9 @@ test('define data inside a computation', t => {
         let a = S.data(2)
         let b = S.data(3)
 
-        let c = S.computation(() => a()! + b()!)
+        let c = S.computation(() => a() + b())
 
-        t.equals(c(), a()! + b()!, 'c = a + b')
+        t.equals(c(), a() + b(), 'c = a + b')
 
         t.end()
     })
@@ -291,10 +292,10 @@ test('cleanup', t => {
     
             let f = () => {}
             let node = domNode()
-            addEventListener('click', node!, f)
+            addEventListener('click', node, f)
     
             S.cleanup(() => {
-                removeEventListener('click', node!)
+                removeEventListener('click', node)
             })
         })
     
@@ -320,10 +321,10 @@ test('sample', t => {
     let b = S.data(2)
 
     let c = S.computation(() => {
-        return S.sample(a)! + b()!
+        return S.sample(a) + b()
     })
 
-    t.equal(c(), a()! + b()!, 'c = a + b')
+    t.equal(c(), a() + b(), 'c = a + b')
     t.equals(S.stats.ticks, 0, 'No writes, no ticks')
 
     a(100)
@@ -331,12 +332,12 @@ test('sample', t => {
     t.equals(S.stats.ticks, 1, 'Write = tick but...')
     t.equals(S.stats.computations.evaluated, 0, 'the tick didn\'t do anything')
 
-    t.notEqual(c(), a()! + b()!, 'c <> a + b')
+    t.notEqual(c(), a() + b(), 'c <> a + b')
 
     b(1)
     t.equals(S.stats.ticks, 2, 'b written too, so tick occurred')
 
-    t.equal(c(), a()! + b()!, 'c = a + b')
+    t.equal(c(), a() + b(), 'c = a + b')
     t.equals(S.stats.computations.evaluated, 1, 'the tick evaluated the computation because a non sampled dependency was written to')
 
     t.end()
@@ -371,7 +372,7 @@ test('generators?', async t => {
         // generator
         let b = b$()
 
-        return a! + b!
+        return a + b
     })
 
     // here is a synchronous computation
