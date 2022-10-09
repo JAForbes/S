@@ -1,4 +1,4 @@
-type SyncComputationInternal<T> = 
+type SyncComputationInternal<T> =
     { type: 'Stream'
     , tag: 'SyncComputation'
     , value?: T
@@ -6,27 +6,27 @@ type SyncComputationInternal<T> =
     , compute: () => void;
     }
 
-type GeneratorComputationInternal<T> = 
+type GeneratorComputationInternal<T> =
     { type: 'Stream'
     , tag: 'GeneratorComputation'
     , value?: T
-    , next?: T 
+    , next?: T
     , compute: () => void;
     }
 
-type ComputationInternal<T> = 
-    | SyncComputationInternal<T> 
+type ComputationInternal<T> =
+    | SyncComputationInternal<T>
     | GeneratorComputationInternal<T>
 
-type DataInternal<T> = 
+type DataInternal<T> =
     { type: 'Stream'
     , tag: 'Data'
     , value?: T
-    , next?: T 
+    , next?: T
     }
 
-type StreamInternal<T> = 
-    | DataInternal<T> 
+type StreamInternal<T> =
+    | DataInternal<T>
     | ComputationInternal<T>
 
 type State = 'frozen' | 'propagating' | 'idle'
@@ -53,7 +53,7 @@ let cleanups = new Map<ComputationInternal<unknown>, Set<VoidFunction>>;
 /**
  * Track the computation call stack so we know which computations
  * depend on other streams when read in their context.
- * 
+ *
  * Also used to store the computations parents at definition time.
  */
 let active : ComputationInternal<unknown>[] = []
@@ -75,9 +75,9 @@ let nextTicks : Array<() => any> = [];
 
 /**
  * The parents of a computation, used to prevent children
- * computation streams being recomputed if the outer 
+ * computation streams being recomputed if the outer
  * computation will already be running it for free.
- * 
+ *
  * Without this your inner most computations will
  * update ^n number of nested computations, not fun!
  */
@@ -112,17 +112,17 @@ export type AnyMap<K extends object,V> = WeakMap<K, V> | Map<K, V>;
 
 // Typed version of https://www.npmjs.com/package/xet
 // by @barneycarroll
-export function xet<K extends object, V>( 
-    map: AnyMap<K,V>, 
-    key: K, 
-    fn: (key: K, map: AnyMap<K,V>) => V 
+export function xet<K extends object, V>(
+    map: AnyMap<K,V>,
+    key: K,
+    fn: (key: K, map: AnyMap<K,V>) => V
 ) : V {
     if(map.has(key)) {
         return map.get(key) as V
     }
-  
+
     const value = fn(key, map)
-  
+
     map.set(key, value)
 
 	return value
@@ -132,18 +132,18 @@ export function xet<K extends object, V>(
  * When some data changes, direct dependencies need to
  * be updated.  But if those dependencies update, the
  * dependendies of those dependenies need to update.
- * 
+ *
  * When we know we're about to tick, we compute
  * that recursive structure into a flat list before
  * the tick starts.
- * 
+ *
  * I prefer it this way, but it also works well with
  * S' atomic state update model.  Only the dependencies
  * at the time the tick started matter.  If by the time
  * the tick is half way complete some new dependency
  * arises, that is a job for another tick.
- * 
- * @param stream 
+ *
+ * @param stream
  */
 function computeDependents(stream: StreamInternal<unknown>){
     let stack : ComputationInternal<unknown> [] = []
@@ -155,7 +155,7 @@ function computeDependents(stream: StreamInternal<unknown>){
 
         if (x.tag !== 'GeneratorComputation') {
             stack.push(...xet(dependents, x, () => new Set()))
-            
+
             toRun.add(x)
 
             dependents.get(stream)!.delete(x)
@@ -165,12 +165,12 @@ function computeDependents(stream: StreamInternal<unknown>){
     }
 }
 
-// these overloads are here to ensure streams with an initial value 
+// these overloads are here to ensure streams with an initial value
 // are not "possibly undefined"
-export function data<T>(value: T) : Signal<T>; 
+export function data<T>(value: T) : Signal<T>;
 export function data<T>(value?: T) : Signal<T | undefined>
 export function data<T>(value?: T){
-    
+
     const stream : DataInternal<T> = {
         type: 'Stream',
         tag: 'Data',
@@ -180,50 +180,50 @@ export function data<T>(value?: T){
 
     let accessor = (...args: T[] | [(( x?: T ) => T )] ) => {
 
-        if ( args.length ) {                                                            // set
+        if ( args.length ) {
 
-            if ( state === 'propagating' ) {                                            // if already propagating
-                nextTicks.push(() => (accessor as any)(...args))                        // remember this write for later
-                return stream.value                                                     // return the current resolved value
+            if ( state === 'propagating' ) {
+                nextTicks.push(() => (accessor as any)(...args))
+                return stream.value
             }
-            let nextVal: T;                                                             // set by value or visitor function
+            let nextVal: T;
             if ( typeof args[0] === 'function' ) {
                 nextVal = (args[0] as any)(stream.value)
             } else {
                 nextVal = args[0]
             }
-            
-            if ( streamsToResolve.has(stream) && nextVal != stream.next ) {             // if this stream has already been set this tick
-                throw new Conflict()                                                    // and the value is different, throw a conflict
+
+            if ( streamsToResolve.has(stream) && nextVal != stream.next ) {
+                throw new Conflict()
             } else {
-                stream.next = nextVal                                                   // otherwise store this next value and queue 
-                streamsToResolve.add(stream)                                            // stream.value = stream.next for the end of
-            }                                                                           // the tick
+                stream.next = nextVal
+                streamsToResolve.add(stream)
+            }
 
 
-            computeDependents(stream)                                                   // if we're not already propagating (we're not)
-                                                                                        // compute the full dependency tree
+            computeDependents(stream)
 
-            if ( state === 'idle' ) {                                                   // tick if we're not frozen
+
+            if ( state === 'idle' ) {
                 tick()
             }
 
-        } else if ( active[0] ) {                                                       // if the data is being read inside a computation
-            xet(dependents, stream, () => new Set())                                    // remember that that computation depends on this
-                .add(active[0])                                                         // data
+        } else if ( active[0] ) {
+            xet(dependents, stream, () => new Set())
+                .add(active[0])
 
-            return stream.next                                                          // inside a computation we allow you to see the 
-                                                                                        // next value
+            return stream.next
+
         } else {
-            return stream.value                                                         // otherwise we show you the current resolved value
+            return stream.value
         }
     }
 
     return accessor
 }
 
-type SyncComputationVisitor<T> = 
-    | (() => undefined) 
+type SyncComputationVisitor<T> =
+    | (() => undefined)
     | (() => T | undefined)
     | ((previous?: T) => T | undefined)
     ;
@@ -236,35 +236,35 @@ export function computation<T>( fn: SyncComputationVisitor<T> ) : Computation<T>
         tag: 'SyncComputation',
         compute(){
 
-            active.unshift(stream)                                                      // add ourselves to the active stack
-            stream.next = fn(stream.value);                                             // for the benefit of child computations
+            active.unshift(stream)
+            stream.next = fn(stream.value);
             active.shift()
 
-            if ( state === 'idle' ) {                                                   // if we're not in a tick
-                stream.value = stream.next                                              // just update the value straight away
+            if ( state === 'idle' ) {
+                stream.value = stream.next
             } else {
-                streamsToResolve.add(stream)                                            // otherwise, update it at the end of the tick
+                streamsToResolve.add(stream)
             }
         }
     }
 
-    stream.compute()                                                                    // initialize it
-    
+    stream.compute()
+
     // whatever active was when this was defined
     // is our parents
     parents.set(stream, new Set(active))
 
     return () => {
-        
-        if ( active[0] ) {                                                              // if we're inside a computation
-            xet(dependents, stream, () => new Set())                                    // record it depends on us
+
+        if ( active[0] ) {
+            xet(dependents, stream, () => new Set())
                 .add(active[0])
 
-            return stream.next;                                                         // allow the computation to see
-                                                                                        // the new value immediately
+            return stream.next;
+
         }
-        return stream.value                                                             // outside of computations we only
-                                                                                        // share the resolved value
+        return stream.value
+
     }
 }
 
@@ -288,48 +288,48 @@ interface StreamIterator<T> {
 
 export function generator<T>( _fn: any ) : Computation<T> {
 
-    let iteration: Promise<T | undefined> | null;                                       // the return value of iterate
-                                                                                        // resolved when the generator is complete
-
-    let it :  StreamIterator<T> | null;                                                 // the generator's iterator
-
-    let fn = _fn as StreamGeneratorVisitor<T>                                           // the generator function itself
-    
-    let sentinel = {};                                                                  // how we (currently) track that it.return()
-                                                                                        // was called, which is what happens
-                                                                                        // when we cancel an old computation mid flight
+    let iteration: Promise<T | undefined> | null;
 
 
-    const stream : GeneratorComputationInternal<T> = {                                  // like a sync computation, but if the computation 
-        type: "Stream",                                                                 // is suspended when a dependency triggers, we cancel
-        tag: "GeneratorComputation",                                                    // the old computation and start a new one
-        compute(){                                                                      // so there is never 2 instances of the same
-                                                                                        // async computation running at any given time
+    let it :  StreamIterator<T> | null;
 
-            if (iteration) {                                                            // if a computation is running:
-                it!.return(sentinel as T);                                              // cancel it
+    let fn = _fn as StreamGeneratorVisitor<T>
+
+    let sentinel = {};
+
+
+
+
+    const stream : GeneratorComputationInternal<T> = {
+        type: "Stream",
+        tag: "GeneratorComputation",
+        compute(){
+
+
+            if (iteration) {
+                it!.return(sentinel as T);
             }
 
-            it = fn()                                                                   // start a new one
-            iteration = iterate(it)                                                     // handle promises etc
+            it = fn()
+            iteration = iterate(it)
 
-            iteration.catch( err => {                                                   // if an error occurs inside iterate
-                it?.throw(err)                                                          // pass it to the try catch inside
-            })                                                                          // generator fn
+            iteration.catch( err => {
+                it?.throw(err)
+            })
 
-            iteration.then((maybeSentinel) => {         
+            iteration.then((maybeSentinel) => {
                 iteration = null
-                it = null                                                               // when the computation finishes
-                if(maybeSentinel === sentinel) {                                        // and if we didn't cancel it
+                it = null
+                if(maybeSentinel === sentinel) {
                     return;
                 }
 
-                computeDependents(stream)                                               // kick off a new tick
-                
+                computeDependents(stream)
+
                 if ( state == 'idle' ) {
                     streamsToResolve.add(stream)
                     tick()
-                } 
+                }
             })
         }
     }
@@ -337,29 +337,29 @@ export function generator<T>( _fn: any ) : Computation<T> {
     async function iterate<T>(it: StreamIterator<T>){
         let value, done, next;
         do {
-            active.unshift(stream)                                                      // when the computation runs
-            void ({ done, value } = it.next(next))                                      // we add ourselves to the stack
-            active.shift()                                                              // for the benefit of child computations
+            active.unshift(stream)
+            void ({ done, value } = it.next(next))
+            active.shift()
 
-            if ( value && 'then' in Object(value) ) {                                   // if a promise is returned
-                value = await value                                                     // resolve it, 
-                                                                                        // (rejections are handled in compute)
+            if ( value && 'then' in Object(value) ) {
+                value = await value
+
             }
 
-            next = value                                                                // whatever was resolved, echo it back
+            next = value
         } while (!done)
-        stream.next = value                                                             // when the generator ends, stash the value
-        streamsToResolve.add(stream)                                                    // on next, and queue up the resolution
+        stream.next = value
+        streamsToResolve.add(stream)
         return value
     }
 
-    stream.compute()                                                                    // initialize the stream
-    
+    stream.compute()
+
     // whatever active was when this was defined
     // is our parents
     parents.set(stream, new Set(active))
 
-    return () => {                                                                      // same behaviour as a sync computation
+    return () => {
         if (active[0]) {
             xet(dependents, stream, () => new Set())
                 .add(active[0])
@@ -371,28 +371,28 @@ export function generator<T>( _fn: any ) : Computation<T> {
 }
 
 export function freeze(f: VoidFunction) : void {
-    if (state == 'frozen') {                                                            // already frozen, so just run f()
+    if (state == 'frozen') {
         f()
         return;
     }
-    if ( state == 'propagating' ) {                                                     // maybe this is fine? my thinking is
-        // this might be fine, not sure yet                                             // the intention of a freeze is to
-        throw new FreezingWhilePropagating()                                            // prevent a tick, so if a tick has
-    }                                                                                   // already started, maybe expectations are subverted
+    if ( state == 'propagating' ) {
+        // this might be fine, not sure yet
+        throw new FreezingWhilePropagating()
+    }
 
-    let oldState = state                                                                // maybe state should be a stack?
+    let oldState = state
     state = 'frozen'
-    f()                                                                                 // run the freeze fn, all child computations etc
-                                                                                        // will now not start a tick, instead just queuing up
-                                                                                        // the change
+    f()
+
+
     state = oldState
-    
-    
-    tick()                                                                              // now we can tick
+
+
+    tick()
 }
 
 
-export function cleanup(f: VoidFunction) : void {                                       // record a cleanup to run next tick
+export function cleanup(f: VoidFunction) : void {
     if ( active[0] ) {
         xet(cleanups, active[0], () => new Set())
             .add(f)
@@ -401,9 +401,9 @@ export function cleanup(f: VoidFunction) : void {                               
     }
 }
 
-export function root(f: ( dispose: VoidFunction ) => void ){                            // nothing fancy except a place to run all cleanup fns
-    f(() => {                                                                           // should only run cleanups for computations belonging 
-        for( let xs of cleanups.values() ){                                             // to this root, but for now just cleans up everything
+export function root(f: ( dispose: VoidFunction ) => void ){
+    f(() => {
+        for( let xs of cleanups.values() ){
             for( let cleanupFn of xs ) {
                 cleanupFn()
             }
@@ -412,9 +412,9 @@ export function root(f: ( dispose: VoidFunction ) => void ){                    
     })
 }
 
-export function parentScheduled(                                                        // if a parent computation is going to run
-    computation: ComputationInternal<unknown>                                           // there is no point also scheduling the child to run
-    , scheduledToRun: Set<ComputationInternal<unknown>>                                 // because the child will run for free
+export function parentScheduled(
+    computation: ComputationInternal<unknown>
+    , scheduledToRun: Set<ComputationInternal<unknown>>
 ) {
     for( let parent of parents.get(computation)! ) {
         if ( scheduledToRun.has(parent) ) {
@@ -425,50 +425,50 @@ export function parentScheduled(                                                
 }
 
 export function tick(){
-    if (state === 'propagating' || state === 'frozen' ) return;                         // should never happen, maybe throw?
+    if (state === 'propagating' || state === 'frozen' ) return;
 
     stats.ticks++
 
     state = 'propagating'
 
-    let oldToRun = new Set(toRun)                                                       // for checking parentScheduled
+    let oldToRun = new Set(toRun)
 
-    toRun.clear()                                                                       // brand new day
+    toRun.clear()
 
     for( let f of oldToRun ) {
-        for( let cleanupFn of xet(cleanups, f, () => new Set()) ) {                     // run the clean up
+        for( let cleanupFn of xet(cleanups, f, () => new Set()) ) {
             cleanupFn()
-            cleanups.get(f)!.delete(cleanupFn)                                          // then clean up the clean up...
+            cleanups.get(f)!.delete(cleanupFn)
         }
 
-        if ( !parentScheduled(f, oldToRun) ) {                                          // if safe to run, run it
+        if ( !parentScheduled(f, oldToRun) ) {
             let oldActive = active
-            active = [...parents.get(f) ?? []]                                          // restore the active at definition time
+            active = [...parents.get(f) ?? []]
             f.compute()
             active = oldActive
             stats.computations.evaluated++
-        } 
+        }
 
     }
-    
 
-    for ( let s of streamsToResolve ) {                                                 // resolve state changes
-        s.value = s.next                                                                // an extra loop so the transaction is complete
-    }                                                                                   // before the state changes
+
+    for ( let s of streamsToResolve ) {
+        s.value = s.next
+    }
     streamsToResolve.clear()
 
     state = 'idle'
 
-    let next = nextTicks.shift()                                                        // if there was a tick created mid-tick, kick it off
-    
-    
+    let next = nextTicks.shift()
+
+
     if ( next ) {
         next()
     }
 }
 
 
-export function sample<T>(signal: Signal<T>){                                           // pretend active is empty to prevent tick triggering
+export function sample<T>(signal: Signal<T>){
     let oldActive = active
     active = [];
     let value = signal()
