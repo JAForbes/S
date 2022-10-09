@@ -62,6 +62,72 @@ test('batch', t => {
     t.end()
 })
 
+test('child computations are cleaned up when parent updates', t => {
+
+    let outer = S.data(1)
+    let middle = S.data(1)
+    let inner = S.data(1)
+
+    let ids = []
+    let stats = {
+        outer: 0,
+        middle: 0,
+        inner : 0
+    }
+
+    S.computation(() => {
+        ids.push( Math.random().toString(15).slice(2) )
+        outer()
+        stats.outer++
+        let middle$ = S.computation(() => {
+            ids.push( Math.random().toString(15).slice(2) )
+            middle()
+            stats.middle++
+            let inner$ = S.computation(() => {
+                ids.push( Math.random().toString(15).slice(2) )
+                inner()
+                stats.inner++
+            })
+
+            inner$()
+        })
+
+        middle$()
+    })
+
+    t.equals(Object.values(stats).join('|'), '1|1|1', 'all levels initialized (outer)')
+    
+    // the inner computations runs before the outer ones in the tick
+    // which means when each outer computation runs, it re-evaluates
+    // the inner ones that have already run
+    // if we ran the outer computations first, it the inner would run for free
+    // and we'd be able to skip the children of each computation
+    // as we progressed through the tick
+    //
+    // we could sort the list by how many parents a computation had (ascending)
+    // but I'm wondering if there's a way to do that more naively/automatically
+    // by e.g. just pushing onto a stack, or ticking in reverse order
+    //
+    // another thing to consider, if we werent' calling inner$() inside middle$()
+    // then middle$() wouldn't need to re-run, only inner would, but
+    // when inner re-ran, active wouldn't include middle and outer, it'd be empty
+    // which is wrong, we need to not forget the previous parents when re-running
+    // a computation, should just be a matter of altering the active stack
+    // inside the tick loop
+    //
+    // so two small changes, that should hopefully make this pass
+    //
+    // Update: yep we get this for free, when we traverse we just check 
+    // if any of our parents are scheduled for propagation (set intersection)
+    // if so, we take ourselves out of the loop (aside from cleanup)
+    inner(2)
+    t.equals(Object.values(stats).join('|'), '2|2|2', 'all levels initialized (outer)')
+    
+    console.log(stats)
+
+    t.end()
+})
+
 
 // we don't track when computations are read _yet_
 // so this fails
@@ -424,5 +490,10 @@ test('generators?', async t => {
     b$(4)
     await new Promise( Y => setTimeout(Y, 30) )
 
+    t.end()
+})
+
+test('multi root disposal', t => {
+    t.fail();
     t.end()
 })
