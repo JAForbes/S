@@ -809,3 +809,48 @@ test('multi root disposal', t => {
 
     t.end()
 })
+
+test('log example', t => {
+
+    let log = {
+        foo: 0,
+        bar: 0,
+        bleck: 0,
+    }
+    const isLogging = S.data(true);
+    const foo = S.data(0)
+    const bar = S.data(0)
+    const bleck = S.data(0)
+
+    S.root(() => {
+        S.computation(() => {
+            if (isLogging()) {
+                S.computation(() => {log.foo++; foo(); });
+                S.computation(() => {log.bar++; bar(); });
+                S.computation(() => {log.bleck++; bleck; });
+            }
+        });
+    })
+
+    t.deepEquals(log, { foo: 1, bar: 1, bleck: 1 }, 'first run')
+
+    bar(2)
+
+    t.deepEquals(log, { foo: 1, bar: 2, bleck: 1 }, 'bar updated')
+
+    isLogging(false)
+
+    t.deepEquals(log, { foo: 1, bar: 2, bleck: 1 }, 'no updates as logging false')
+
+    foo(x => x + 1)
+    bar(x => x + 1 )
+    bleck( x => x + 1 )
+
+    t.deepEquals(log, { foo: 1, bar: 2, bleck: 1 }, 'no updates as logging false')
+
+    isLogging(true)
+
+    t.deepEquals(log, { foo: 2, bar: 3, bleck: 2 }, 'first run after updating isLogging')
+
+    t.end()
+})
