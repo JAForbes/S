@@ -41,6 +41,7 @@ let state : State = 'idle';
 let activeRoot : Root | null = null;
 
 const rootChildren = new WeakMap<Root, Set<ComputationInternal<unknown>>>();
+const rootOfStream = new WeakMap<ComputationInternal<unknown>, Root>();
 
 /**
  * The computations that will need to rerun next tick
@@ -286,6 +287,7 @@ export function computation<T>( fn: SyncComputationVisitor<T> ) : Computation<T>
     // disposed
     xet(rootChildren, activeRoot, () => new Set())
         .add(stream)
+    rootOfStream.set(stream, activeRoot)
 
     return () => {
 
@@ -400,6 +402,7 @@ export function generator<T>( _fn: any ) : Computation<T> {
     // disposed
     xet(rootChildren, activeRoot, () => new Set())
         .add(stream)
+    rootOfStream.set(stream, activeRoot)
 
     return () => {
         if (active[0]) {
@@ -523,8 +526,14 @@ export function tick(){
         } else {
             let oldActive = active
             active = [...parents.get(f) ?? []]
+            
+            let oldActiveRoot = activeRoot
+            activeRoot = rootOfStream.get(f) ?? null;
+
             f.compute()
+
             active = oldActive
+            activeRoot = oldActiveRoot;
             stats.computations.evaluated++
         }
 
