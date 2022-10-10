@@ -91,6 +91,7 @@ let nextTicks : Array<() => any> = [];
  * update ^n number of nested computations, not fun!
  */
 let parents = new WeakMap<ComputationInternal<unknown>, Set<ComputationInternal<unknown>>>();
+let children = new WeakMap<ComputationInternal<unknown>, Set<ComputationInternal<unknown>>>();
 
 
 export class StreamError extends Error {}
@@ -272,6 +273,9 @@ export function computation<T>( fn: SyncComputationVisitor<T> ) : Computation<T>
     // whatever active was when this was defined
     // is our parents
     parents.set(stream, new Set(active))
+    for( let x of active ) {  
+        xet(children, x, () => new Set()).add( stream )
+    }
 
     
     if (activeRoot === null) {
@@ -384,6 +388,9 @@ export function generator<T>( _fn: any ) : Computation<T> {
     // whatever active was when this was defined
     // is our parents
     parents.set(stream, new Set(active))
+    for( let x of active ) {  
+        xet(children, x, () => new Set()).add( stream )
+    }
 
     if (activeRoot === null) {
         throw new ComputationWithoutRoot()
@@ -485,13 +492,35 @@ export function tick(){
 
     toRun.clear()
 
+    let allChildren = new Set<ComputationInternal<unknown>>();
+    for( let x of oldToRun ) {
+        for( let child of children.get(x) ?? [] ) {
+            // record the child exists
+            allChildren.add(child)
+            // add to the tick so we can run
+            // the clean up fns (at most once)
+            oldToRun.add(child)
+            parents.delete(child)
+            streamsToResolve.delete(child)
+            // should we delete the dependents too?
+            dependents.delete(x)
+        }
+
+        // start again
+        children.delete(x)
+    }
+    
+
     for( let f of oldToRun ) {
         for( let cleanupFn of xet(cleanups, f, () => new Set()) ) {
             cleanupFn()
             cleanups.get(f)!.delete(cleanupFn)
         }
 
-        if ( !parentScheduled(f, oldToRun) ) {
+        // if is a child, we only need to clean up
+        if ( allChildren.has(f) ) {
+            continue;
+        } else {
             let oldActive = active
             active = [...parents.get(f) ?? []]
             f.compute()
