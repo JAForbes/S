@@ -1,3 +1,8 @@
+type Root =
+    { type: 'Root'
+    , tag: 'Root'
+    }
+
 type SyncComputationInternal<T> =
     { type: 'Stream'
     , tag: 'SyncComputation'
@@ -32,6 +37,10 @@ type StreamInternal<T> =
 type State = 'frozen' | 'propagating' | 'idle'
 
 let state : State = 'idle';
+
+let activeRoot : Root | null = null;
+
+const rootChildren = new WeakMap<Root, Set<ComputationInternal<unknown>>>();
 
 /**
  * The computations that will need to rerun next tick
@@ -88,6 +97,7 @@ export class StreamError extends Error {}
 export class CleanupWithoutComputationContext extends StreamError {}
 export class Conflict extends StreamError {}
 export class FreezingWhilePropagating extends StreamError {}
+export class ComputationWithoutRoot extends StreamError {}
 
 /**
  * For tests and debugging.
@@ -150,15 +160,24 @@ function computeDependents(stream: StreamInternal<unknown>){
 
     stack.push(...xet(dependents, stream, () => new Set()))
 
+    dependents.get(stream)?.clear()
+
     while (stack.length) {
         let x = stack.shift() as ComputationInternal<unknown>;
 
+        
         if (x.tag !== 'GeneratorComputation') {
             stack.push(...xet(dependents, x, () => new Set()))
 
-            toRun.add(x)
+            // already disposed, cheaper to do it here
+            if ( parents.get(x) == null ) {
+                // as it doesn't run, it won't
+                // be added as a child ever again
+                continue;
+            }
 
-            dependents.get(stream)!.delete(x)
+            toRun.add(x)
+            
         }
 
         toRun.add(x)
@@ -254,6 +273,16 @@ export function computation<T>( fn: SyncComputationVisitor<T> ) : Computation<T>
     // is our parents
     parents.set(stream, new Set(active))
 
+    
+    if (activeRoot === null) {
+        throw new ComputationWithoutRoot()
+    }
+
+    // so we can dispose this when the root is
+    // disposed
+    xet(rootChildren, activeRoot, () => new Set())
+        .add(stream)
+
     return () => {
 
         if ( active[0] ) {
@@ -296,9 +325,6 @@ export function generator<T>( _fn: any ) : Computation<T> {
     let fn = _fn as StreamGeneratorVisitor<T>
 
     let sentinel = {};
-
-
-
 
     const stream : GeneratorComputationInternal<T> = {
         type: "Stream",
@@ -359,6 +385,15 @@ export function generator<T>( _fn: any ) : Computation<T> {
     // is our parents
     parents.set(stream, new Set(active))
 
+    if (activeRoot === null) {
+        throw new ComputationWithoutRoot()
+    }
+
+    // so we can dispose this when the root is
+    // disposed
+    xet(rootChildren, activeRoot, () => new Set())
+        .add(stream)
+
     return () => {
         if (active[0]) {
             xet(dependents, stream, () => new Set())
@@ -402,14 +437,29 @@ export function cleanup(f: VoidFunction) : void {
 }
 
 export function root(f: ( dispose: VoidFunction ) => void ){
+    let root : Root = {
+        type: 'Root',
+        tag: 'Root'
+    }
+
+    let oldActiveRoot = activeRoot;
+    activeRoot = root;
+
+    let oldActive = active
+    active = []
     f(() => {
-        for( let xs of cleanups.values() ){
-            for( let cleanupFn of xs ) {
-                cleanupFn()
+        for ( let x of rootChildren.get(root) ?? []){
+            for ( let cleanup of cleanups.get(x) ?? [] ) {
+                cleanup()
             }
+            dependents.delete(x)
+            toRun.delete(x)
+            cleanups.delete(x)
+            parents.delete(x)
         }
-        cleanups.clear()
     })
+    activeRoot = oldActiveRoot;
+    active = oldActive
 }
 
 export function parentScheduled(
