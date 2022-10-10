@@ -434,6 +434,20 @@ test('generators?', async t => {
     let a$ = S.data(1)
     let b$ = S.data(2)
 
+    let computations = {
+        preYieldC: 0,
+        postYieldC: 0,
+        d: 0,
+        a$Listener: 0,
+        b$Listener: 0,
+        dListener: 0,
+        cListener: 0
+    }
+
+    let values: Record<string, number | undefined> = {
+        cInner: undefined
+    }
+
     S.root(() => {
 
         // but generators suspend their context
@@ -443,11 +457,13 @@ test('generators?', async t => {
         let c = S.generator<number>(function * (){ 
             let a = a$()
     
+            computations.preYieldC++
             // e.g. here we pause the context while
             // this async logic runs
             yield new Promise( Y => setTimeout(Y, 10) )
             // here we resume it
     
+            computations.postYieldC++
             // you can imagine setting active=null when we yield
             // and active=generator when we resume
     
@@ -457,6 +473,7 @@ test('generators?', async t => {
             // generator
             let b = b$()
     
+            values.cInner = a + b
             return a + b
         })
     
@@ -467,8 +484,11 @@ test('generators?', async t => {
         // I guess it is just undefined, that's how S already
         // works
         let d = S.computation(() => {
-            console.log(c(), c()! +1)
-            return (c() ?? 0) + 1
+            // console.log(c(), c()! +1)
+
+            computations.d++
+            values.dInner = (c()!) + 1
+            return (c()!) + 1
         })
     
         // another problem to be solved, ticks
@@ -487,31 +507,151 @@ test('generators?', async t => {
         // sync
     
         S.computation(() => {
-            console.log('c()', c())
+            computations.cListener++
+
+            values.cListener = c()
         })
         S.computation(() => {
-            console.log('a$()', a$())
+            computations.a$Listener++
+            values.a$Listener = a$()
         })
         S.computation(() => {
-            console.log('b$()', b$())
+            computations.b$Listener++
+            values.b$Listener = b$()
         })
         S.computation(() => {
-            console.log('d()', d())
+            computations.dListener++
+            values.dListener = d()
         })
     })
 
+    t.equals(
+        Object.values(computations).join('|')
+        , [1, 0, 1, 1, 1, 1, 1].join('|')
+        , 'all computations ran once except post yield'
+    )
+
+    t.equals(
+        Object.values(values).join('|')
+        , [undefined, NaN, undefined, 1, 2, NaN ].join('|')
+        , 'c values are undefined, d is NaN as it depends on C'
+    )
+
     await new Promise( Y => setTimeout(Y, 10) )
+
+    t.equals(
+        Object.values(values).join('|')
+        , [3, 3 + 1, 3, 1, 2, 3 + 1 ].join('|')
+        , 'c values are resolved, d is now not NaN'
+    )
+
+    t.equals(
+        Object.values(computations).join('|')
+        , [1, 1, 2, 1, 1, 2, 2 ].join('|')
+        , 'post yield and async listeners ran'
+    )
     
-    console.log('setting a')
     a$(2)
 
+    t.equals(
+        Object.values(computations).join('|')
+        , [2, 1, 2, 2, 1, 2, 2].join('|')
+        , 'all computations ran once except post yield and b listener'
+    )
+
     await new Promise( Y => setTimeout(Y, 20) )
-    console.log('setting b')
+
+    t.equals(
+        Object.values(computations).join('|')
+        , [2, 2, 3, 2, 1, 3, 3].join('|')
+        , 'post yield and async listeners ran'
+    )
+
+    t.equals(values.cInner, values.cListener, 'c is in sync')
+    t.equals(values.dInner, values.dListener, 'd is in sync')
+    t.equals(values.a$Listener, a$(), 'a is in sync')
+    t.equals(values.b$Listener, b$(), 'b is in sync')
+
     b$(4)
     await new Promise( Y => setTimeout(Y, 30) )
 
+    t.equals(
+        Object.values(computations).join('|'),
+        [2, 2, 3, 2 -1, 1 + 1 -1, 3, 3].map( x => x + 1).join('|'),
+        'b listener ran, and all the other listeners except a listener ran'
+    )
+
     t.end()
 })
+
+test('cancelled generators run clean up', async t => {
+    let a$ = S.data(1)
+    let b$ = S.data(2)
+
+    let cleanups = {
+        first: 0,
+        middle: 0,
+        final: 0
+    }
+
+    S.root(() => {
+        S.generator<number>(function * (){ 
+            let a = a$()
+    
+            S.cleanup(() => {
+                cleanups.first++
+            })
+            
+            yield new Promise( Y => setTimeout(Y, 10) )
+    
+            S.cleanup(() => {
+                cleanups.middle++
+            })
+            
+            let b = b$()
+    
+            yield new Promise( Y => setTimeout(Y, 10) )
+    
+            S.cleanup(() => {
+                cleanups.final++
+            })
+    
+            return a + b
+        })
+    })
+
+    await new Promise( Y => setTimeout(Y, 30) )
+
+    t.equals(
+        Object.values(cleanups).join('|'), '0|0|0', 'no clean ups run first time'
+    )
+
+    b$(x => x + 1)
+
+    await new Promise( Y => setTimeout(Y, 30) )
+
+    t.equals(
+        Object.values(cleanups).join('|'), '1|1|1', 'clean ups run on write'
+    )
+
+    b$(x => x + 1)
+
+    await new Promise( Y => setTimeout(Y, 10) )
+
+    t.equals(
+        Object.values(cleanups).join('|'), '2|2|2', 'clean ups run on 2nd write'
+    )
+
+    b$(x => x + 1)
+
+    await new Promise( Y => setTimeout(Y, 0) )
+
+    t.equals(
+        Object.values(cleanups).join('|'), '3|3|2', 'only registered cleanups run if cancelled early'
+    )
+
+    t.end()
+});
 
 test('multi root disposal', t => {
     let a = S.data(1)
