@@ -98,8 +98,11 @@ let children = new WeakMap<ComputationInternal<unknown>, Set<ComputationInternal
 export class StreamError extends Error {}
 export class CleanupWithoutComputationContext extends StreamError {}
 export class Conflict extends StreamError {}
-export class FreezingWhilePropagating extends StreamError {}
 export class ComputationWithoutRoot extends StreamError {}
+export class RunawayTicks extends StreamError {}
+
+export const MAX_TICKS = 100_000
+export let runawayTicks = 0
 
 /**
  * For tests and debugging.
@@ -269,8 +272,6 @@ export function computation<T>( fn: SyncComputationVisitor<T> ) : Computation<T>
         }
     }
 
-    stream.compute()
-
     // whatever active was when this was defined
     // is our parents
     parents.set(stream, new Set(active))
@@ -288,6 +289,8 @@ export function computation<T>( fn: SyncComputationVisitor<T> ) : Computation<T>
     xet(rootChildren, activeRoot, () => new Set())
         .add(stream)
     rootOfStream.set(stream, activeRoot)
+
+    stream.compute()
 
     return () => {
 
@@ -385,8 +388,6 @@ export function generator<T>( _fn: any ) : Computation<T> {
         return value
     }
 
-    stream.compute()
-
     // whatever active was when this was defined
     // is our parents
     parents.set(stream, new Set(active))
@@ -404,6 +405,8 @@ export function generator<T>( _fn: any ) : Computation<T> {
         .add(stream)
     rootOfStream.set(stream, activeRoot)
 
+    stream.compute()
+
     return () => {
         if (active[0]) {
             xet(dependents, stream, () => new Set())
@@ -420,11 +423,15 @@ export function freeze(f: VoidFunction) : void {
         f()
         return;
     }
-    if ( state == 'propagating' ) {
-        // this might be fine, not sure yet
-        throw new FreezingWhilePropagating()
-    }
 
+
+    
+    // If called within a computation, the system is already frozen, so freeze is inert.
+    if (state == 'propagating') {
+        f()
+        return;
+    }
+    
     let oldState = state
     state = 'frozen'
     f()
@@ -547,12 +554,20 @@ export function tick(){
 
     state = 'idle'
 
-    let next = nextTicks.shift()
+    if (runawayTicks > 0) return;
+    while ( nextTicks.length ) {
+        let next = nextTicks.shift()
 
+        runawayTicks++
 
-    if ( next ) {
-        next()
+        if (runawayTicks > MAX_TICKS ) {
+            throw new RunawayTicks()
+        }
+        next!()
     }
+    runawayTicks = 0;
+
+
 }
 
 

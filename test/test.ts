@@ -854,3 +854,188 @@ test('log example', t => {
 
     t.end()
 })
+
+test('setting data within a computation (overdraft)', t => {
+
+    S.stats.ticks = 0
+    S.stats.computations.evaluated = 0
+
+    const overdrawn = S.data(false);
+    const balance = S.data(0);
+
+    S.root(() => {
+        S.computation(() => { overdrawn(balance() < 0); });
+    })
+
+    t.deepEquals(
+        { 
+            overdrawn: overdrawn()
+            , balance: balance() 
+            , computations: S.stats.computations.evaluated
+            , ticks: S.stats.ticks
+        }
+        , 
+        {
+            overdrawn: false, balance: 0, computations: 0, ticks: 1
+        }
+        , 'expected initial state'
+    )
+
+    balance(-400)
+
+    t.deepEquals(
+        { 
+            overdrawn: overdrawn()
+            , balance: balance() 
+            , computations: S.stats.computations.evaluated
+            , ticks: S.stats.ticks
+        }
+        , 
+        {
+            overdrawn: true, balance: -400, computations: 1, ticks: 3
+        }
+        , 'negative balance triggerd overdrawn update'
+    )
+
+    balance(0)
+
+    t.deepEquals(
+        { 
+            overdrawn: overdrawn()
+            , balance: balance() 
+            , computations: S.stats.computations.evaluated
+            , ticks: S.stats.ticks
+        }
+        , 
+        {
+            overdrawn: false, balance: 0, computations: 2, ticks: 5
+        }
+        , 'zero balance triggered overdrawn update'
+    )
+
+    t.end()
+})
+
+test('setting data within a computation (auto incrementer)', t => {
+
+    S.stats.ticks = 0
+    S.stats.computations.evaluated = 0
+
+    let a = S.data(0)
+
+    S.root(() => {
+        S.computation(() => {
+            if (a() < 100) {
+                a( x => x + 10 )
+            }
+        })
+    })
+
+    // exactly 10 because first run is not counted
+    // as it wasn't part of a tick
+    t.deepEquals(
+        { 
+            a: a()
+            , computations: S.stats.computations.evaluated
+            , ticks: S.stats.ticks
+        }
+        , 
+        {
+            a: 100, computations: 10, ticks: 10
+        }
+        , 'initial run + 9 updates + 1 failing if check'
+    )
+
+    a(50)
+
+    t.deepEquals(
+        { 
+            a: a()
+            , computations: S.stats.computations.evaluated
+            , ticks: S.stats.ticks
+        }
+        , 
+        {
+            a: 100, computations: 10 + 5 + 1, ticks: 10 + 5 + 1
+        }
+        , '5 updates to resolve + 1 failing if check'
+    )
+
+    a(50)
+
+    t.deepEquals(
+        { 
+            a: a()
+            , computations: S.stats.computations.evaluated
+            , ticks: S.stats.ticks
+        }
+        , 
+        {
+            a: 100, computations: 16 + 5 + 1, ticks: 16 + 5 + 1
+        }
+        , 'same again'
+    )
+    // + 1 is the final run that fails the if conditional
+
+    t.end()
+})
+
+test('rule like behaviour (checking/balance)', t => {
+    S.stats.ticks = 0;
+    S.stats.computations.evaluated = 0;
+
+    let checking = S.data(0)
+    let savings = S.data(0)
+
+    S.root(() => {
+        S.computation(() => {
+            let c = checking();
+            let s = savings();
+            if (c < 0 && s > 1000) {
+                checking(checking() + 1000);
+                savings(savings() - 1000);
+            }
+        });
+    })
+
+    t.deepEquals({
+        savings: savings()
+        , checking: checking()
+        , stats: S.stats
+    },{
+        savings: 0,
+        checking: 0,
+        stats: { ticks: 0, computations: { evaluated: 0 } }
+    }, 'Expected initial state')
+
+    savings(5000)
+
+    t.deepEquals({
+        savings: savings()
+        , checking: checking()
+        , stats: S.stats
+    },{
+        savings: 5000,
+        checking: 0,
+        stats: { ticks: 1, computations: { evaluated: 1 } }
+    }, '1 tick, 1 computation')
+    t.end()
+})
+
+test('Max ticks', t => {
+
+    S.stats.ticks = 0;
+
+    let data = S.data(0);
+    t.throws(() => {
+        S.root(() => {
+            S.computation(() => {
+                data()
+                data(x => x + 1)
+            })
+        })
+    }, S.RunawayTicks, 'Runaway ticks caught')
+
+    t.equals(S.stats.ticks, S.MAX_TICKS+1, 'Caught at max ticks')
+    t.end()
+})
