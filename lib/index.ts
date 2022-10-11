@@ -189,6 +189,135 @@ function computeDependents(stream: StreamInternal<unknown>){
     }
 }
 
+export function on<T,U>( 
+    signal : Signal<unknown> | Signal<unknown>[],
+    fn: (p:T) => U,
+    seed: T,
+    onchanges: boolean
+) : Computation<U>
+
+export function on<T,U>( 
+    signal : Signal<unknown> | Signal<unknown>[],
+    fn: (p:T | undefined) => U,
+    seed?: T,
+    onchanges?: boolean
+) : Computation<U> {
+    
+    const signals = [].concat(signal as any) as Signal<unknown>[];
+
+    const stream : SyncComputationInternal<T> = {
+        type: "Stream",
+        tag: 'SyncComputation',
+        value: seed,
+        next: seed,
+        compute(){
+
+            active.unshift(stream)
+            for( let signal of signals ) {
+                signal()
+            }
+            stream.next = fn(stream.value) as unknown as T;
+            active.shift()
+
+            if ( state === 'idle' ) {
+                stream.value = stream.next
+            } else {
+                streamsToResolve.add(stream)
+            }
+        }
+    }
+
+    // whatever active was when this was defined
+    // is our parents
+    parents.set(stream, new Set(active))
+    for( let x of active ) {  
+        xet(children, x, () => new Set()).add( stream )
+    }
+
+    
+    if (activeRoot === null) {
+        throw new ComputationWithoutRoot()
+    }
+
+    // so we can dispose this when the root is
+    // disposed
+    xet(rootChildren, activeRoot, () => new Set())
+        .add(stream)
+    rootOfStream.set(stream, activeRoot)
+
+    if (onchanges){
+        stream.compute()
+    }
+
+    return () => {
+
+        if ( active[0] ) {
+            xet(dependents, stream, () => new Set())
+                .add(active[0])
+
+            return stream.next as U;
+
+        }
+        return stream.value as U
+    }
+}
+
+
+// these overloads are here to ensure streams with an initial value
+// are not "possibly undefined"
+export function value<T>(value: T, predicate:(a:T,b:T) => boolean =((a,b) => a === b) ){
+
+    const stream : DataInternal<T> = {
+        type: 'Stream',
+        tag: 'Data',
+        next: value,
+        value
+    }
+
+    let accessor = (...args: T[] | [(( x?: T ) => T )] ) => {
+
+        if ( args.length ) {
+
+            if ( state === 'propagating' ) {
+                nextTicks.push(() => (accessor as any)(...args))
+                return stream.value
+            }
+            let nextVal: T;
+            if ( typeof args[0] === 'function' ) {
+                nextVal = (args[0] as any)(stream.value)
+            } else {
+                nextVal = args[0]
+            }
+
+            if ( streamsToResolve.has(stream) && nextVal != stream.next ) {
+                throw new Conflict()
+            } else if (predicate(nextVal,stream.value!)) {
+                return stream.value
+            } else  {
+                stream.next = nextVal
+                streamsToResolve.add(stream)
+            }
+
+            computeDependents(stream)
+
+            if ( state === 'idle' ) {
+                tick()
+            }
+
+        } else if ( active[0] ) {
+            xet(dependents, stream, () => new Set())
+                .add(active[0])
+
+            return stream.next
+
+        } else {
+            return stream.value
+        }
+    }
+
+    return accessor
+}
+
 // these overloads are here to ensure streams with an initial value
 // are not "possibly undefined"
 export function data<T>(value: T) : Signal<T>;
@@ -566,8 +695,6 @@ export function tick(){
         next!()
     }
     runawayTicks = 0;
-
-
 }
 
 

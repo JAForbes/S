@@ -13,6 +13,44 @@ test('data', t => {
     })
 })
 
+test('S.value', t => {
+
+    let a = S.value(0)
+    let i = 0
+    S.root(() => {
+        S.computation(() => {
+            a()
+            i++
+        })
+    })
+
+    t.equals(i, 1, 'Initial computation run')
+
+    a(1)
+
+    t.equals(i, 2, 'Update causes computation to rerun')
+
+    a(1)
+
+    t.equals(i, 2, 'Same value does not trigger a tick')
+
+    a(2)
+
+    t.equals(i, 3, 'Same value does not trigger a tick')
+
+    t.end()
+})
+
+test('on', t => {
+    t.fail('on')
+    t.end()
+})
+
+test('reducing computations', t => {
+    t.fail('reducing computations')
+    t.end()
+})
+
 test('ticks', t => {
     S.root(() => {
         S.stats.ticks = 0
