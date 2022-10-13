@@ -94,6 +94,7 @@ let nextTicks : Array<() => any> = [];
 let parents = new WeakMap<ComputationInternal<unknown>, Set<ComputationInternal<unknown>>>();
 let children = new WeakMap<ComputationInternal<unknown>, Set<ComputationInternal<unknown>>>();
 
+let computingOnComputation : boolean = false;
 
 export class StreamError extends Error {}
 export class CleanupWithoutComputationContext extends StreamError {}
@@ -190,10 +191,10 @@ function computeDependents(stream: StreamInternal<unknown>){
 }
 
 export function on<T,U>( 
-    signal : Signal<unknown> | Signal<unknown>[],
+    signal : Signal<any> | Signal<any>[],
     fn: (p:T) => U,
     seed: T,
-    onchanges: boolean
+    onchanges?: boolean
 ) : Computation<U>
 
 export function on<T,U>( 
@@ -212,13 +213,12 @@ export function on<T,U>(
         next: seed,
         compute(){
 
-            active.unshift(stream)
-            for( let signal of signals ) {
-                signal()
-            }
+            let oldActive = active
+            active = []
+            computingOnComputation = true
             stream.next = fn(stream.value) as unknown as T;
-            active.shift()
-
+            computingOnComputation = false
+            active = oldActive
             if ( state === 'idle' ) {
                 stream.value = stream.next
             } else {
@@ -234,7 +234,6 @@ export function on<T,U>(
         xet(children, x, () => new Set()).add( stream )
     }
 
-    
     if (activeRoot === null) {
         throw new ComputationWithoutRoot()
     }
@@ -245,7 +244,13 @@ export function on<T,U>(
         .add(stream)
     rootOfStream.set(stream, activeRoot)
 
-    if (onchanges){
+    active.unshift(stream)
+    for( let signal of signals ) {
+        signal()
+    }
+    active.shift()
+
+    if (!onchanges){
         stream.compute()
     }
 
@@ -256,9 +261,11 @@ export function on<T,U>(
                 .add(active[0])
 
             return stream.next as U;
-
+        } else if ( computingOnComputation ) {
+            return stream.next as U
+        } else {
+            return stream.value as U
         }
-        return stream.value as U
     }
 }
 
@@ -309,7 +316,8 @@ export function value<T>(value: T, predicate:(a:T,b:T) => boolean =((a,b) => a =
                 .add(active[0])
 
             return stream.next
-
+        } else if ( computingOnComputation ) {
+            return stream.next
         } else {
             return stream.value
         }
@@ -353,9 +361,7 @@ export function data<T>(value?: T){
                 streamsToResolve.add(stream)
             }
 
-
             computeDependents(stream)
-
 
             if ( state === 'idle' ) {
                 tick()
@@ -366,7 +372,8 @@ export function data<T>(value?: T){
                 .add(active[0])
 
             return stream.next
-
+        } else if ( computingOnComputation ) {
+            return stream.next
         } else {
             return stream.value
         }
@@ -377,20 +384,22 @@ export function data<T>(value?: T){
 
 type SyncComputationVisitor<T> =
     | (() => undefined)
-    | (() => T | undefined)
-    | ((previous?: T) => T | undefined)
+    | (() => T)
+    | ((previous: T) => T)
     ;
 
-export type Computation<T> = () => T | undefined;
+export type Computation<T> = () => T;
 
-export function computation<T>( fn: SyncComputationVisitor<T> ) : Computation<T> {
+export function computation<T>( fn: SyncComputationVisitor<T>, seed?: T) : Computation<T | undefined> 
+export function computation<T>( fn: SyncComputationVisitor<T>, seed: T ) : Computation<T> {
     const stream : SyncComputationInternal<T> = {
         type: "Stream",
         tag: 'SyncComputation',
+        value: seed,
         compute(){
 
             active.unshift(stream)
-            stream.next = fn(stream.value);
+            stream.next = fn(stream.value!);
             active.shift()
 
             if ( state === 'idle' ) {
@@ -427,10 +436,12 @@ export function computation<T>( fn: SyncComputationVisitor<T> ) : Computation<T>
             xet(dependents, stream, () => new Set())
                 .add(active[0])
 
-            return stream.next;
-
+            return stream.next!;
+        } else if ( computingOnComputation ) {
+            return stream.next!
+        } else {
+            return stream.value!
         }
-        return stream.value
 
     }
 }
@@ -440,7 +451,11 @@ export function computation<T>( fn: SyncComputationVisitor<T> ) : Computation<T>
 // because I yield a promise it assumes
 // the generator's final value is a promise
 interface StreamGeneratorVisitor<T> {
-    () : StreamIterator<T>
+    (previous:T) : any
+}
+
+interface StreamGeneratorVisitorInternal<T> {
+    (previous:T) : StreamIterator<T>
 }
 
 interface StreamIterator<T> {
@@ -453,28 +468,30 @@ interface StreamIterator<T> {
     throw(err: Error): void;
 }
 
-export function generator<T>( _fn: any ) : Computation<T> {
+export function generator<T>( fn: StreamGeneratorVisitor<T> )  : Computation<T | undefined> 
+export function generator<T>( fn: StreamGeneratorVisitor<T>, seed: T)  : Computation<T> 
+export function generator<T>( _fn: StreamGeneratorVisitor<T>, seed?: T ) : Computation<T | undefined> {
 
     let iteration: Promise<T | undefined> | null;
 
 
     let it :  StreamIterator<T> | null;
 
-    let fn = _fn as StreamGeneratorVisitor<T>
+    let fn = _fn as StreamGeneratorVisitorInternal<T>
 
     let sentinel = {};
 
     const stream : GeneratorComputationInternal<T> = {
         type: "Stream",
         tag: "GeneratorComputation",
+        value: seed,
         compute(){
-
 
             if (iteration) {
                 it!.return(sentinel as T);
             }
 
-            it = fn()
+            it = fn(stream.value!)
             iteration = iterate(it)
 
             iteration.catch( err => {
@@ -542,6 +559,8 @@ export function generator<T>( _fn: any ) : Computation<T> {
                 .add(active[0])
 
             return stream.next
+        } else if ( computingOnComputation ) {
+            return stream.next
         }
         return stream.value
     }
@@ -582,7 +601,7 @@ export function cleanup(f: VoidFunction) : void {
     }
 }
 
-export function root(f: ( dispose: VoidFunction ) => void ){
+export function root<T>(f: ( dispose: VoidFunction ) => T ){
     let root : Root = {
         type: 'Root',
         tag: 'Root'
@@ -593,7 +612,7 @@ export function root(f: ( dispose: VoidFunction ) => void ){
 
     let oldActive = active
     active = []
-    f(() => {
+    let out = f(() => {
         for ( let x of rootChildren.get(root) ?? []){
             for ( let cleanup of cleanups.get(x) ?? [] ) {
                 cleanup()
@@ -606,6 +625,8 @@ export function root(f: ( dispose: VoidFunction ) => void ){
     })
     activeRoot = oldActiveRoot;
     active = oldActive
+
+    return out
 }
 
 export function parentScheduled(
