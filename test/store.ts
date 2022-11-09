@@ -24,9 +24,9 @@ test('store', t => {
         projectsStore.setState( () => [{ id:1, name: 'NSW456'}, { id:2, name: 'QLD123'}])
 
 
-        let userStore = usersStore.whereItemEq({ "id": user_id })
+        let userStore = usersStore.whereUnnested({ "id": user_id })
 
-        let projectStore = projectsStore.whereItemEq({ "id": project_id })
+        let projectStore = projectsStore.whereUnnested({ "id": project_id })
 
         const nameStore = userStore.prop("name")
 

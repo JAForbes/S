@@ -48,15 +48,10 @@ type Store<T> = {
 	prop<K extends keyof T>(key: K): Store<T[K]>,
 	unnest: () => Store<Unnest<T>>,
 	
-	where<
-		K extends keyof T,
-		V extends T[K],
-		R extends Partial<Record<K, S.Computation<V>>>
-	>(
-		record: R
-	): Store<T>
+	where: typeof where;
 
-	whereItemEq: ReturnType<Store<T>["unnest"]>["where"]
+	// whereUnnested: ReturnType<Store<T>["unnest"]>["where"]
+	whereUnnested: typeof whereUnnested
 
 	filter( f: ( (x:T) => boolean) ): Store<T>
 };
@@ -66,29 +61,33 @@ type NotifyMap<T> = WeakMap<Store<T>, (
 )>;
 const notify: NotifyMap<any> = new WeakMap();
 
-
-const prop_ = <T> (store: Store<T>) => (key: keyof T) => {
-	return createChildStore(x => [x[key]], (parent, update) => ({ ...parent, [key]: update(parent[key])}), store, []);
-};
-
-const unnest_ = <T>(store: Store<T>) => () => {
+function prop<T, K extends keyof T>(this: Store<T>, key: keyof T) : Store<T[K]> {
+	return createChildStore(x => [x[key]], (parent, update) => ({ ...parent, [key]: update(parent[key])}), this, []) as Store<T[K]>;
+}
+function unnest<T>(this: Store<T>){
 	return createChildStore(
 		xs => (xs as any[]),
 		(list, update) => (list as any[]).map( x => update(x) ) as T,
-		store,
+		this,
 		[]
 	)
 }
 
-const filter_ = <T>(store: Store<T>) => (f: (x:T) => boolean) => {
+function filter<T>(this: Store<T>, f: (x:T) => boolean) {
 	return createChildStore(
 		x => f(x) ? [x] : [],
 		(x, update) => (f(x) ? update(x) : x ),
-		store,
+		this,
 		[]
 	)
 }
-const where_ = <T>(store: Store<T>) => (record: Record<keyof T, T[keyof T]>) => {
+
+function where<
+	T,
+	K extends keyof T,
+	V extends T[K],
+	R extends Partial<Record<K, S.Computation<V>>>
+>(this: Store<T>, record: R) : Store<T> {
 	const anyRecord = record as Record<string, any>;
 	return createChildStore(
 		x => Object.entries(anyRecord).flatMap(
@@ -104,12 +103,17 @@ const where_ = <T>(store: Store<T>) => (record: Record<keyof T, T[keyof T]>) => 
 			}
 			return object
 		},
-		store,
+		this,
 		[]
 	)
 }
 
-const whereItemEq_ = <T>(store: Store<T>) => (record: Record<keyof T, T[keyof T]>) => {
+function whereUnnested <T, TT extends Unnest<T>, K extends keyof TT, V extends TT[K]>(
+	this: Store<T>
+	, record: Partial<
+		Record<K, S.Computation<V> >
+	>
+) : Store<Unnest<T>> {
 
 	const anyRecord = record as Record<string, any>;
 	return createChildStore(
@@ -125,11 +129,19 @@ const whereItemEq_ = <T>(store: Store<T>) => (record: Record<keyof T, T[keyof T]
 			? update(x)
 			: x
 		) as any,
-		store,
+		this,
 		[]
 	)
 }
 
+function focus<T, U> (
+	this: Store<T>
+	, getter: (x: T) => U[] | []
+	, setter: (state: T, update: ( (x:U) => U) ) => T
+	, ...dependencies: S.Computation<any>[]
+)  {
+	return createChildStore(getter, setter, this, dependencies);
+}
 
 export function createStore<T>(xs: T[]): Store<T> {
 	const stateStream = S.data(xs);
@@ -138,11 +150,7 @@ export function createStore<T>(xs: T[]): Store<T> {
 		stateStream(S.sample(stateStream).map( x => f(x) ))
 	};
 
-	const focus: Store<T>["focus"] = (getter, setter) => {
-		return createChildStore(getter, setter, store, []);
-	};
-
-	let incompleteStore = {
+	let store : Store<T> = {
 		sample: () => S.sample(stateStream)[0],
 		sampleAll: () => S.sample(stateStream),
 		setState,
@@ -150,15 +158,12 @@ export function createStore<T>(xs: T[]): Store<T> {
 		readAll: () => stateStream(),
 		getReadStream: () => stateStream,
 		focus,
+		prop,
+		where,
+		whereUnnested: whereUnnested,
+		unnest,
+		filter,
 	};
-
-	let store = Object.assign(incompleteStore as Store<T>, {
-		prop: prop_(incompleteStore as Store<T>),
-		where: where_(incompleteStore as Store<T>),
-		whereItemEq: whereItemEq_(incompleteStore as Store<T>),
-		unnest: unnest_(incompleteStore as Store<T>),
-		filter: filter_(incompleteStore as Store<T>),
-	})
 
 	notify.set(store, (f) => {
 		stateStream( 
@@ -177,25 +182,23 @@ function createChildStore<Parent, Child>(
 	parentStore: Store<Parent>,
 	dependencies: S.Computation<any>[]
 ): Store<Child> {
-	const allDependencies$ = mergeAll([parentStore.getReadStream(), ...dependencies]) as S.Computation<[Parent[], ...any[]]>;
+	const allDependencies$ = 
+		mergeAll([parentStore.getReadStream(), ...dependencies]) as S.Computation<[Parent[], ...any[]]>;
+
 	const read$ = dropRepeatsWith(
 		map( ([xs]) => {
 			return xs.flatMap( x => getter(x) )
 		}, allDependencies$),
 		(xs, ys) => xs.length === ys.length	&& xs.every( (x,i) => x === ys[i])
 	);
+
 	const setState = (f: (x?: Child) => Child) => {
 		notify.get(parentStore)!(
 			(parent: Parent) => setter(parent, f)
 		);
 	};
-	const focus: Store<Child>["focus"] = (getter, setter, ...dependencies) => {
-		return createChildStore(getter, setter, store, dependencies);
-	};
-	const prop: Store<Child>["prop"] = (key) => {
-		return createChildStore(x => [x[key]], (parent, update) => ({ ...parent, [key]: update(parent[key])}), store, []);
-	};
-	let incompleteStore = {
+	
+	let store: Store<Child> = {
 		sample: () => S.sample(read$)[0],
 		sampleAll: () => S.sample(read$),
 		read: () => read$()[0],
@@ -204,15 +207,11 @@ function createChildStore<Parent, Child>(
 		getReadStream: () => read$,
 		focus,
 		prop,
+		where,
+		whereUnnested: whereUnnested,
+		unnest,
+		filter,
 	};
-
-	let store = Object.assign(incompleteStore as Store<Child>, {
-		prop: prop_(incompleteStore as Store<Child>),
-		where: where_(incompleteStore as Store<Child>),
-		whereItemEq: whereItemEq_(incompleteStore as Store<Child>),
-		unnest: unnest_(incompleteStore as Store<Child>),
-		filter: filter_(incompleteStore as Store<Child>),
-	}) as Store<Child>
 
 	notify.set(store, (f) => {
 		notify.get(parentStore)!(
