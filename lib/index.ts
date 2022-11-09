@@ -390,6 +390,7 @@ type SyncComputationVisitor<T> =
 
 export type Computation<T> = () => T;
 
+export function computation<T>( fn: SyncComputationVisitor<T>, seed: T ) : Computation<T>
 export function computation<T>( fn: SyncComputationVisitor<T>, seed?: T) : Computation<T | undefined> 
 export function computation<T>( fn: SyncComputationVisitor<T>, seed: T ) : Computation<T> {
     const stream : SyncComputationInternal<T> = {

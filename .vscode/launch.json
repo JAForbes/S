@@ -17,6 +17,16 @@
         {
             "type": "node",
             "request": "launch",
+            "name": "Store Tests",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/test/store.ts",
+            "runtimeArgs": ["--loader", "ts-node/esm"]
+        },
+        {
+            "type": "node",
+            "request": "launch",
             "name": "Idea",
             "skipFiles": [
                 "<node_internals>/**"
