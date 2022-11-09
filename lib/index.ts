@@ -93,6 +93,12 @@ let nextTicks : Array<() => any> = [];
  */
 let parents = new WeakMap<ComputationInternal<unknown>, Set<ComputationInternal<unknown>>>();
 let children = new WeakMap<ComputationInternal<unknown>, Set<ComputationInternal<unknown>>>();
+let ids = new WeakMap<any, string>();
+const randomId = () => Math.random().toString(15)
+const record = (x:any) => {
+    ids.set(x, randomId())
+    return x
+}
 
 let computingOnComputation : boolean = false;
 
@@ -124,11 +130,14 @@ export interface Signal<T, U=T> {
     ( fn: (( x: U ) => U ) ) : U;
 }
 
-export type AnyMap<K extends object,V> = WeakMap<K, V> | Map<K, V>;
+export type AnyMap<K,V> =
+    K extends object
+    ? WeakMap<K, V> | Map<K, V>
+    : Map<K,V>;
 
 // Typed version of https://www.npmjs.com/package/xet
 // by @barneycarroll
-export function xet<K extends object, V>(
+export function xet<K, V>(
     map: AnyMap<K,V>,
     key: K,
     fn: (key: K, map: AnyMap<K,V>) => V
@@ -227,6 +236,8 @@ export function on<T,U>(
         }
     }
 
+    ids.set(stream, randomId())
+
     // whatever active was when this was defined
     // is our parents
     parents.set(stream, new Set(active))
@@ -254,7 +265,7 @@ export function on<T,U>(
         stream.compute()
     }
 
-    return () => {
+    return record(() => {
 
         if ( active[0] ) {
             xet(dependents, stream, () => new Set())
@@ -266,7 +277,7 @@ export function on<T,U>(
         } else {
             return stream.value as U
         }
-    }
+    })
 }
 
 
@@ -280,6 +291,8 @@ export function value<T>(value: T, predicate:(a:T,b:T) => boolean =((a,b) => a =
         next: value,
         value
     }
+
+    ids.set(stream, randomId())
 
     let accessor = (...args: T[] | [(( x?: T ) => T )] ) => {
 
@@ -323,7 +336,7 @@ export function value<T>(value: T, predicate:(a:T,b:T) => boolean =((a,b) => a =
         }
     }
 
-    return accessor
+    return record(accessor)
 }
 
 // these overloads are here to ensure streams with an initial value
@@ -338,6 +351,8 @@ export function data<T>(value?: T){
         next: value,
         value
     }
+
+    ids.set(stream, randomId())
 
     let accessor = (...args: T[] | [(( x?: T ) => T )] ) => {
 
@@ -379,7 +394,7 @@ export function data<T>(value?: T){
         }
     }
 
-    return accessor
+    return record(accessor)
 }
 
 type SyncComputationVisitor<T> =
@@ -411,6 +426,8 @@ export function computation<T>( fn: SyncComputationVisitor<T>, seed: T ) : Compu
         }
     }
 
+    ids.set(stream, randomId())
+
     // whatever active was when this was defined
     // is our parents
     parents.set(stream, new Set(active))
@@ -431,7 +448,7 @@ export function computation<T>( fn: SyncComputationVisitor<T>, seed: T ) : Compu
 
     stream.compute()
 
-    return () => {
+    return record(() => {
 
         if ( active[0] ) {
             xet(dependents, stream, () => new Set())
@@ -444,7 +461,7 @@ export function computation<T>( fn: SyncComputationVisitor<T>, seed: T ) : Compu
             return stream.value!
         }
 
-    }
+    })
 }
 
 // only defining these types as I couldn't
@@ -516,6 +533,8 @@ export function generator<T>( _fn: StreamGeneratorVisitor<T>, seed?: T ) : Compu
         }
     }
 
+    ids.set(stream, randomId())
+
     async function iterate<T>(it: StreamIterator<T>){
         let value, done, next;
         do {
@@ -554,7 +573,7 @@ export function generator<T>( _fn: StreamGeneratorVisitor<T>, seed?: T ) : Compu
 
     stream.compute()
 
-    return () => {
+    return record(() => {
         if (active[0]) {
             xet(dependents, stream, () => new Set())
                 .add(active[0])
@@ -564,7 +583,7 @@ export function generator<T>( _fn: StreamGeneratorVisitor<T>, seed?: T ) : Compu
             return stream.next
         }
         return stream.value
-    }
+    })
 }
 
 export function freeze(f: VoidFunction) : void {
@@ -573,8 +592,6 @@ export function freeze(f: VoidFunction) : void {
         return;
     }
 
-
-    
     // If called within a computation, the system is already frozen, so freeze is inert.
     if (state == 'propagating') {
         f()
@@ -726,4 +743,8 @@ export function sample<T>(signal: Signal<T>){
     let value = signal()
     active = oldActive
     return value;
+}
+
+export function id( s: Signal<any> ) {
+    return ids.get(s)
 }

@@ -8,7 +8,7 @@ test('store', t => {
 
     Store.root(() => {
 
-        let store = Store.createStore([{
+        let store = Store.createStore('@', [{
             users: [] as User[],
             projects: [] as Project[]
         }])

@@ -26,6 +26,8 @@ type Store<T> = {
 	whereUnnested: typeof whereUnnested
 
 	filter( f: ( (row:T) => boolean) ): Store<T>
+
+	path: string[]
 };
 
 type NotifyMap<T> = WeakMap<Store<T>, (
@@ -34,25 +36,55 @@ type NotifyMap<T> = WeakMap<Store<T>, (
 
 const notify: NotifyMap<any> = new WeakMap();
 
-const Instances: Map<string, Store<any>> = new Map()
+const instances: Map<string, Store<any>> = new Map()
 
 function prop<T, K extends keyof T>(this: Store<T>, key: keyof T) : Store<T[K]> {
-	return createChildStore(row => [row[key]], (parent, update) => ({ ...parent, [key]: update(parent[key])}), this) as Store<T[K]>;
+	const newPath = this.path.concat('['+String(key)+']')
+
+	return S.xet(
+		instances
+		, newPath.join('.')
+		, () => createChildStore(
+			row => [row[key]]
+			, (parent, update) => ({ ...parent, [key]: update(parent[key])})
+			, this
+			, newPath
+		) as Store<T[K]>
+	)
+	
 }
 function unnest<T>(this: Store<T>){
-	return createChildStore(
-		arrayRow => (arrayRow as any[]),
-		(arrayRow, update) => (arrayRow as any[]).map( unnestedRow => update(unnestedRow) ) as T,
-		this,
+	const newPath = this.path.concat('unnest()')
+
+	return S.xet(instances, newPath.join('.'), () => 
+		createChildStore(
+			arrayRow => (arrayRow as any[]),
+			(arrayRow, update) => (arrayRow as any[]).map( unnestedRow => update(unnestedRow) ) as T,
+			this,
+			newPath
+		)
 	)
 }
 
 function filter<T>(this: Store<T>, f: (row:T) => boolean) {
-	return createChildStore(
-		row => f(row) ? [row] : [],
-		(row, update) => (f(row) ? update(row) : row ),
-		this,
+	const newPath = this.path.concat('filter('+f+')')
+
+	return S.xet( instances, newPath.join('.'), () => 
+		createChildStore(
+			row => f(row) ? [row] : [],
+			(row, update) => (f(row) ? update(row) : row ),
+			this,
+			newPath
+		)
 	)
+}
+
+function computationToString(s: any){
+	const id = S.id(s)
+	if (id) {
+		return `signal{${id}}`
+	}
+	return s + ''
 }
 
 function where<
@@ -62,21 +94,29 @@ function where<
 	R extends Partial<Record<K, S.Computation<V>>>
 >(this: Store<T>, record: R) : Store<T> {
 	const anyRecord = record as Record<string, any>;
-	return createChildStore(
-		row => Object.entries(anyRecord).flatMap(
-				([k,v]) => (row as any)[k] === v() ? [row] : []
-		) as any,
-		(row, update) => {
-			if ( 
-				Object.entries(anyRecord).every(
-					([k,v]) => (row as any)[k] === v()
-				)	
-			) {
-				return update(row as any) as any as T
-			}
-			return row
-		},
-		this,
+	const newPath = 
+		this.path.concat('where({'+Object.entries(record).map(
+			([k,v]) => `${k}: ${computationToString(v)}`
+		)+'})')
+
+	return S.xet( instances, newPath.join('.'), () =>
+		createChildStore(
+			row => Object.entries(anyRecord).flatMap(
+					([k,v]) => (row as any)[k] === v() ? [row] : []
+			) as any,
+			(row, update) => {
+				if ( 
+					Object.entries(anyRecord).every(
+						([k,v]) => (row as any)[k] === v()
+					)	
+				) {
+					return update(row as any) as any as T
+				}
+				return row
+			},
+			this,
+			newPath
+		)
 	)
 }
 
@@ -88,20 +128,28 @@ function whereUnnested <T, TT extends Unnest<T>, K extends keyof TT, V extends T
 ) : Store<Unnest<T>> {
 
 	const anyRecord = record as Record<string, any>;
-	return createChildStore(
-		arrayRow => (arrayRow as any[]).filter( unnestedRow =>  
-			Object.entries(anyRecord).every(
-				([k,v]) => unnestedRow[k] === v()
-			)
-		) as any,
-		(arrayRow, update) => (arrayRow as any[]).map( unnestedRow => 
-			Object.entries(anyRecord).every(
-				([k,v]) => unnestedRow[k] === v()
-			)
-			? update(unnestedRow)
-			: unnestedRow
-		) as any,
-		this,
+	const newPath = 
+		this.path.concat('whereUnnested({'+Object.entries(record).map(
+			([k,v]) => `${k}: ${computationToString(v)}`
+		)+'})')
+
+	return S.xet(instances, newPath.join('.'), () => 
+		createChildStore(
+			arrayRow => (arrayRow as any[]).filter( unnestedRow =>  
+				Object.entries(anyRecord).every(
+					([k,v]) => unnestedRow[k] === v()
+				)
+			) as any,
+			(arrayRow, update) => (arrayRow as any[]).map( unnestedRow => 
+				Object.entries(anyRecord).every(
+					([k,v]) => unnestedRow[k] === v()
+				)
+				? update(unnestedRow)
+				: unnestedRow
+			) as any,
+			this,
+			newPath,
+		)
 	)
 }
 
@@ -110,15 +158,23 @@ function focus<T, U> (
 	, getter: (row: T) => U[] | []
 	, setter: (state: T, update: ( (row:U) => U) ) => T
 )  {
-	return createChildStore(getter, setter, this);
+	const key = `focus(${getter})`
+	const newPath = this.path.concat(key)
+	return S.xet(
+		instances,
+		newPath.join('.'),
+		() => createChildStore(getter, setter, this, newPath)
+	)
 }
 
-export function createStore<T>(table: T[]): Store<T> {
+export function createStore<T>(name:string, table: T[]): Store<T> {
 	const stateStream = S.data(table);
 	
 	const setState: Store<T>["setState"] = (f) => {
 		stateStream(S.sample(stateStream).map( row => f(row) ))
 	};
+
+	const path = [name]
 
 	let store : Store<T> = {
 		sample: () => S.sample(stateStream)[0],
@@ -133,6 +189,7 @@ export function createStore<T>(table: T[]): Store<T> {
 		whereUnnested,
 		unnest,
 		filter,
+		path
 	};
 
 	notify.set(store, (f) => {
@@ -149,7 +206,8 @@ export function createStore<T>(table: T[]): Store<T> {
 function createChildStore<Parent, Child>(
 	getter: (parent: Parent) => Child[],
 	setter: (parent: Parent, update: (x?:Child) => Child ) => Parent,
-	parentStore: Store<Parent>
+	parentStore: Store<Parent>,
+	path: string[],
 ): Store<Child> {
 
 	const read$ = U.dropRepeatsWith(
@@ -178,6 +236,7 @@ function createChildStore<Parent, Child>(
 		whereUnnested,
 		unnest,
 		filter,
+		path
 	};
 
 	notify.set(store, (f) => {
