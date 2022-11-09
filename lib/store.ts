@@ -1,34 +1,6 @@
 import * as S from './index.js'
 
-const map = <T,U>(f: ((x:T) => U), computation: S.Computation<T>) => S.computation(() => {
-	return f( computation() )
-}, f(S.sample(computation)))
-
-const dropRepeatsWith = <T>(signal: S.Computation<T>, equality: (a: T, b: T) => boolean) => {
-	let out = S.data( S.sample(signal) )
-	let i = 0
-	S.computation<T>((prev) => {
-		let next = signal()
-
-		if ( i > 0 && !equality(prev, next) ) {
-			out(next)
-		}
-		i++
-		return next
-	})
-	return out;
-}
-
-const mergeAll = <T>(computations: S.Computation<T>[]) : S.Computation<T[]> => {
-	
-	let initial = computations.map( x => S.sample(x)! )
-
-	let out = S.computation(() => {
-		return computations.map( x => x() )
-	}, initial)
-
-	return out
-}
+import * as U from './utils.js'
 
 type Unnest<T> = T extends Array<any> ? T[number] : never;
 
@@ -59,17 +31,19 @@ type Store<T> = {
 type NotifyMap<T> = WeakMap<Store<T>, (
 	(f: ((x:T) => T)) => void
 )>;
+
 const notify: NotifyMap<any> = new WeakMap();
 
+const Instances: Map<string, Store<any>> = new Map()
+
 function prop<T, K extends keyof T>(this: Store<T>, key: keyof T) : Store<T[K]> {
-	return createChildStore(x => [x[key]], (parent, update) => ({ ...parent, [key]: update(parent[key])}), this, []) as Store<T[K]>;
+	return createChildStore(x => [x[key]], (parent, update) => ({ ...parent, [key]: update(parent[key])}), this) as Store<T[K]>;
 }
 function unnest<T>(this: Store<T>){
 	return createChildStore(
 		xs => (xs as any[]),
 		(list, update) => (list as any[]).map( x => update(x) ) as T,
 		this,
-		[]
 	)
 }
 
@@ -78,7 +52,6 @@ function filter<T>(this: Store<T>, f: (x:T) => boolean) {
 		x => f(x) ? [x] : [],
 		(x, update) => (f(x) ? update(x) : x ),
 		this,
-		[]
 	)
 }
 
@@ -104,7 +77,6 @@ function where<
 			return object
 		},
 		this,
-		[]
 	)
 }
 
@@ -130,7 +102,6 @@ function whereUnnested <T, TT extends Unnest<T>, K extends keyof TT, V extends T
 			: x
 		) as any,
 		this,
-		[]
 	)
 }
 
@@ -138,9 +109,8 @@ function focus<T, U> (
 	this: Store<T>
 	, getter: (x: T) => U[] | []
 	, setter: (state: T, update: ( (x:U) => U) ) => T
-	, ...dependencies: S.Computation<any>[]
 )  {
-	return createChildStore(getter, setter, this, dependencies);
+	return createChildStore(getter, setter, this);
 }
 
 export function createStore<T>(xs: T[]): Store<T> {
@@ -160,7 +130,7 @@ export function createStore<T>(xs: T[]): Store<T> {
 		focus,
 		prop,
 		where,
-		whereUnnested: whereUnnested,
+		whereUnnested,
 		unnest,
 		filter,
 	};
@@ -179,16 +149,13 @@ export function createStore<T>(xs: T[]): Store<T> {
 function createChildStore<Parent, Child>(
 	getter: (parent: Parent) => Child[],
 	setter: (parent: Parent, update: (x?:Child) => Child ) => Parent,
-	parentStore: Store<Parent>,
-	dependencies: S.Computation<any>[]
+	parentStore: Store<Parent>
 ): Store<Child> {
-	const allDependencies$ = 
-		mergeAll([parentStore.getReadStream(), ...dependencies]) as S.Computation<[Parent[], ...any[]]>;
 
-	const read$ = dropRepeatsWith(
-		map( ([xs]) => {
+	const read$ = U.dropRepeatsWith(
+		U.map( (xs) => {
 			return xs.flatMap( x => getter(x) )
-		}, allDependencies$),
+		}, parentStore.getReadStream()),
 		(xs, ys) => xs.length === ys.length	&& xs.every( (x,i) => x === ys[i])
 	);
 
@@ -208,7 +175,7 @@ function createChildStore<Parent, Child>(
 		focus,
 		prop,
 		where,
-		whereUnnested: whereUnnested,
+		whereUnnested,
 		unnest,
 		filter,
 	};
