@@ -9,12 +9,11 @@ type Store<T> = {
 	sampleAll(): T[];
 	read(): T;
 	readAll(): T[];
-	setState(f: (row?: T) => T): void;
+	setState(f: (row: T) => T): void;
 	getReadStream: () => S.Computation<T[]>;
 	focus<U>(
 		get: (row: T) => U[] | [],
 		set: (state: T, update: ( (row:U) => U) ) => T,
-		...dependencies: S.Computation<any>[]
 	): Store<U>;
 
 	prop<K extends keyof T>(key: K): Store<T[K]>,
@@ -39,7 +38,7 @@ const notify: NotifyMap<any> = new WeakMap();
 const instances: Map<string, Store<any>> = new Map()
 
 function prop<T, K extends keyof T>(this: Store<T>, key: keyof T) : Store<T[K]> {
-	const newPath = this.path.concat('['+String(key)+']')
+	const newPath = this.path.concat(String(key))
 
 	return S.xet(
 		instances
@@ -205,7 +204,7 @@ export function createStore<T>(name:string, table: T[]): Store<T> {
 
 function createChildStore<Parent, Child>(
 	getter: (parent: Parent) => Child[],
-	setter: (parent: Parent, update: (x?:Child) => Child ) => Parent,
+	setter: (parent: Parent, update: (x:Child) => Child ) => Parent,
 	parentStore: Store<Parent>,
 	path: string[],
 ): Store<Child> {
@@ -217,7 +216,7 @@ function createChildStore<Parent, Child>(
 		(tableA, tableB) => tableA.length === tableB.length	&& tableA.every( (rowA,i) => rowA === tableB[i])
 	);
 
-	const setState = (f: (row?: Child) => Child) => {
+	const setState = (f: (row: Child) => Child) => {
 		notify.get(parentStore)!(
 			(parent: Parent) => setter(parent, f)
 		);
