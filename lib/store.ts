@@ -30,6 +30,8 @@ const mergeAll = <T>(computations: S.Computation<T>[]) : S.Computation<T[]> => {
 	return out
 }
 
+type Unnest<T> = T extends Array<any> ? T[number] : never;
+
 type Store<T> = {
 	sample(): T;
 	sampleAll(): T[];
@@ -42,6 +44,19 @@ type Store<T> = {
 		set: (state: T, update: ( (x:U) => U) ) => T,
 		...dependencies: S.Computation<any>[]
 	): Store<U>;
+
+	prop<K extends keyof T>(key: K): Store<T[K]>,
+	unnest: () => Store<Unnest<T>>,
+	
+	where<
+		K extends keyof T,
+		V extends T[K],
+		R extends Partial<Record<K, S.Computation<V>>>
+	>(
+		record: R
+	): Store<T>
+
+	whereItem: ReturnType<Store<T>["unnest"]>["where"]
 };
 
 type NotifyMap<T> = WeakMap<Store<T>, (
@@ -49,9 +64,65 @@ type NotifyMap<T> = WeakMap<Store<T>, (
 )>;
 const notify: NotifyMap<any> = new WeakMap();
 
+
+const prop_ = <T> (store: Store<T>) => (key: keyof T) => {
+	return createChildStore(x => [x[key]], (parent, update) => ({ ...parent, [key]: update(parent[key])}), store, []);
+};
+
+const unnest_ = <T>(store: Store<T>) => () => {
+	return createChildStore(
+		xs => (xs as any[]),
+		(list, update) => (list as any[]).map( x => update(x) ) as T,
+		store,
+		[]
+	)
+}
+const where_ = <T>(store: Store<T>) => (record: Record<keyof T, T[keyof T]>) => {
+	const anyRecord = record as Record<string, any>;
+	return createChildStore(
+		x => Object.entries(anyRecord).flatMap(
+				([k,v]) => (x as any)[k] === v() ? [x] : []
+		) as any,
+		(object, update) => {
+			if ( 
+				Object.entries(anyRecord).every(
+					([k,v]) => (object as any)[k] === v()
+				)	
+			) {
+				return update(object as any) as any as T
+			}
+			return object
+		},
+		store,
+		[]
+	)
+}
+
+const whereItem_ = <T>(store: Store<T>) => (record: Record<keyof T, T[keyof T]>) => {
+
+	const anyRecord = record as Record<string, any>;
+	return createChildStore(
+		xs => (xs as any[]).filter( x =>  
+			Object.entries(anyRecord).every(
+				([k,v]) => x[k] === v()
+			)
+		) as any,
+		(list, update) => (list as any[]).map( x => 
+			Object.entries(anyRecord).every(
+				([k,v]) => x[k] === v()
+			)
+			? update(x)
+			: x
+		) as any,
+		store,
+		[]
+	)
+}
+
+
 export function createStore<T>(xs: T[]): Store<T> {
 	const stateStream = S.data(xs);
-
+	
 	const setState: Store<T>["setState"] = (f) => {
 		stateStream(S.sample(stateStream).map( x => f(x) ))
 	};
@@ -60,7 +131,7 @@ export function createStore<T>(xs: T[]): Store<T> {
 		return createChildStore(getter, setter, store, []);
 	};
 
-	let store: Store<T> = {
+	let incompleteStore = {
 		sample: () => S.sample(stateStream)[0],
 		sampleAll: () => S.sample(stateStream),
 		setState,
@@ -69,6 +140,13 @@ export function createStore<T>(xs: T[]): Store<T> {
 		getReadStream: () => stateStream,
 		focus,
 	};
+
+	let store = Object.assign(incompleteStore as Store<T>, {
+		prop: prop_(incompleteStore as Store<T>),
+		where: where_(incompleteStore as Store<T>),
+		whereItem: whereItem_(incompleteStore as Store<T>),
+		unnest: unnest_(incompleteStore as Store<T>)
+	})
 
 	notify.set(store, (f) => {
 		stateStream( 
@@ -102,7 +180,10 @@ function createChildStore<Parent, Child>(
 	const focus: Store<Child>["focus"] = (getter, setter, ...dependencies) => {
 		return createChildStore(getter, setter, store, dependencies);
 	};
-	let store: Store<Child> = {
+	const prop: Store<Child>["prop"] = (key) => {
+		return createChildStore(x => [x[key]], (parent, update) => ({ ...parent, [key]: update(parent[key])}), store, []);
+	};
+	let incompleteStore = {
 		sample: () => S.sample(read$)[0],
 		sampleAll: () => S.sample(read$),
 		read: () => read$()[0],
@@ -110,7 +191,16 @@ function createChildStore<Parent, Child>(
 		setState,
 		getReadStream: () => read$,
 		focus,
+		prop,
 	};
+
+	let store = Object.assign(incompleteStore as Store<Child>, {
+		prop: prop_(incompleteStore as Store<Child>),
+		where: where_(incompleteStore as Store<Child>),
+		whereItem: whereItem_(incompleteStore as Store<Child>),
+		unnest: unnest_(incompleteStore as Store<Child>)
+	}) as Store<Child>
+
 	notify.set(store, (f) => {
 		notify.get(parentStore)!(
 			(parent) => setter(parent, f)
