@@ -56,7 +56,9 @@ type Store<T> = {
 		record: R
 	): Store<T>
 
-	whereItem: ReturnType<Store<T>["unnest"]>["where"]
+	whereItemEq: ReturnType<Store<T>["unnest"]>["where"]
+
+	filter( f: ( (x:T) => boolean) ): Store<T>
 };
 
 type NotifyMap<T> = WeakMap<Store<T>, (
@@ -73,6 +75,15 @@ const unnest_ = <T>(store: Store<T>) => () => {
 	return createChildStore(
 		xs => (xs as any[]),
 		(list, update) => (list as any[]).map( x => update(x) ) as T,
+		store,
+		[]
+	)
+}
+
+const filter_ = <T>(store: Store<T>) => (f: (x:T) => boolean) => {
+	return createChildStore(
+		x => f(x) ? [x] : [],
+		(x, update) => (f(x) ? update(x) : x ),
 		store,
 		[]
 	)
@@ -98,7 +109,7 @@ const where_ = <T>(store: Store<T>) => (record: Record<keyof T, T[keyof T]>) => 
 	)
 }
 
-const whereItem_ = <T>(store: Store<T>) => (record: Record<keyof T, T[keyof T]>) => {
+const whereItemEq_ = <T>(store: Store<T>) => (record: Record<keyof T, T[keyof T]>) => {
 
 	const anyRecord = record as Record<string, any>;
 	return createChildStore(
@@ -144,8 +155,9 @@ export function createStore<T>(xs: T[]): Store<T> {
 	let store = Object.assign(incompleteStore as Store<T>, {
 		prop: prop_(incompleteStore as Store<T>),
 		where: where_(incompleteStore as Store<T>),
-		whereItem: whereItem_(incompleteStore as Store<T>),
-		unnest: unnest_(incompleteStore as Store<T>)
+		whereItemEq: whereItemEq_(incompleteStore as Store<T>),
+		unnest: unnest_(incompleteStore as Store<T>),
+		filter: filter_(incompleteStore as Store<T>),
 	})
 
 	notify.set(store, (f) => {
@@ -197,8 +209,9 @@ function createChildStore<Parent, Child>(
 	let store = Object.assign(incompleteStore as Store<Child>, {
 		prop: prop_(incompleteStore as Store<Child>),
 		where: where_(incompleteStore as Store<Child>),
-		whereItem: whereItem_(incompleteStore as Store<Child>),
-		unnest: unnest_(incompleteStore as Store<Child>)
+		whereItemEq: whereItemEq_(incompleteStore as Store<Child>),
+		unnest: unnest_(incompleteStore as Store<Child>),
+		filter: filter_(incompleteStore as Store<Child>),
 	}) as Store<Child>
 
 	notify.set(store, (f) => {

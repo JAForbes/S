@@ -1,7 +1,7 @@
 import * as Store from '../lib/store.js'
 import * as S from '../lib/index.js'
 import test from 'tape'
-type User = { id: number, name: string }
+type User = { id: number, name: string, tags: string[] }
 type Project = { id: number, name: string }
 
 test('store', t => {
@@ -20,13 +20,13 @@ test('store', t => {
         let user_id = S.data(1)
         let project_id = S.data(2)
 
-        usersStore.setState( () => [{ id:1, name: 'James'}, { id:2, name: 'Emmanuel'}])
+        usersStore.setState( () => [{ id:1, name: 'James', tags: ['red'] }, { id:2, name: 'Emmanuel', tags: ['blue'] }, { id: 3, name: 'Jack', tags: ['red']}])
         projectsStore.setState( () => [{ id:1, name: 'NSW456'}, { id:2, name: 'QLD123'}])
 
 
-        let userStore = usersStore.whereItem({ "id": user_id })
+        let userStore = usersStore.whereItemEq({ "id": user_id })
 
-        let projectStore = projectsStore.whereItem({ "id": project_id })
+        let projectStore = projectsStore.whereItemEq({ "id": project_id })
 
         const nameStore = userStore.prop("name")
 
@@ -48,6 +48,15 @@ test('store', t => {
 
         console.log('updating name store')
         nameStore.setState(() => 'John')
+
+        const redUsers = store.prop('users')
+            .unnest()
+            .filter( x => x.tags.includes('red') )
+
+        
+        redUsers.prop('name').setState( x => x + '!')
+        console.log(redUsers.sampleAll())
+        console.log(store.sample().users)
 
     })
     t.end()
