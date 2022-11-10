@@ -450,7 +450,26 @@ export function computation<T>( fn: SyncComputationVisitor<T>, seed: T ) : Compu
         .add(stream)
     rootOfStream.set(stream, activeRoot)
 
-    stream.compute()
+    // for when initial run of a computation triggers a write
+    // which should behave as if time is frozen
+    if ( state === 'idle' ) {
+
+        state = 'propagating'
+        stream.compute()
+        state = 'idle'
+    
+        // some nested writes happened
+        if ( nextTicks.length > 0 ) {
+            tick()
+        }  else {
+            for ( let s of streamsToResolve ) {
+                s.value = s.next
+            }
+            streamsToResolve.clear()
+        }
+    } else {
+        stream.compute()
+    }
 
     return record(() => {
 
@@ -727,16 +746,29 @@ export function tick(){
     state = 'idle'
 
     if (runawayTicks > 0) return;
-    while ( nextTicks.length ) {
-        let next = nextTicks.shift()
+    
 
+    // while processing a tick, nextTicks
+    // may expand, so we need to recursively
+    // update
+    // we use a while loop to prevent stack
+    // overflow, the above early exit detects
+    // when our tick is nested and allows the
+    // parent tick to handle resuming the propagation
+    while ( nextTicks.length > 0 ) {
         runawayTicks++
-
-        if (runawayTicks > MAX_TICKS ) {
-            throw new RunawayTicks()
-        }
-        next!()
+        freeze(() => {
+            let xs = nextTicks.slice()
+            nextTicks.length = 0
+            for( let next of xs ) {
+                if (runawayTicks > MAX_TICKS ) {
+                    throw new RunawayTicks()
+                }
+                next()
+            }
+        })
     }
+    
     runawayTicks = 0;
 }
 

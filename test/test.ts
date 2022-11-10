@@ -1015,7 +1015,9 @@ test('setting data within a computation (overdraft)', t => {
     const balance = S.data(0);
 
     S.root(() => {
-        S.computation(() => { overdrawn(balance() < 0); });
+        S.computation(() => { 
+            overdrawn(balance() < 0); 
+        });
     })
 
     t.deepEquals(
@@ -1027,7 +1029,7 @@ test('setting data within a computation (overdraft)', t => {
         }
         ,
         {
-            overdrawn: false, balance: 0, computations: 0, ticks: 1
+            overdrawn: false, balance: 0, computations: 0, ticks: 2
         }
         , 'expected initial state'
     )
@@ -1043,7 +1045,7 @@ test('setting data within a computation (overdraft)', t => {
         }
         ,
         {
-            overdrawn: true, balance: -400, computations: 1, ticks: 3
+            overdrawn: true, balance: -400, computations: 1, ticks: 4
         }
         , 'negative balance triggerd overdrawn update'
     )
@@ -1059,7 +1061,7 @@ test('setting data within a computation (overdraft)', t => {
         }
         ,
         {
-            overdrawn: false, balance: 0, computations: 2, ticks: 5
+            overdrawn: false, balance: 0, computations: 2, ticks: 6
         }
         , 'zero balance triggered overdrawn update'
     )
@@ -1092,9 +1094,9 @@ test('setting data within a computation (auto incrementer)', t => {
         }
         ,
         {
-            a: 100, computations: 10, ticks: 10
+            a: 100, computations: 10, ticks: 11
         }
-        , 'initial run + 9 updates + 1 failing if check'
+        , 'initial run trigger 2 ticks because of write in computation + 9 updates + 1 failing if check'
     )
 
     a(50)
@@ -1107,7 +1109,7 @@ test('setting data within a computation (auto incrementer)', t => {
         }
         ,
         {
-            a: 100, computations: 10 + 5 + 1, ticks: 10 + 5 + 1
+            a: 100, computations: 10 + 5 + 1, ticks: 11 + 5 + 1
         }
         , '5 updates to resolve + 1 failing if check'
     )
@@ -1122,7 +1124,7 @@ test('setting data within a computation (auto incrementer)', t => {
         }
         ,
         {
-            a: 100, computations: 16 + 5 + 1, ticks: 16 + 5 + 1
+            a: 100, computations: 16 + 5 + 1, ticks: 17 + 5 + 1
         }
         , 'same again'
     )
