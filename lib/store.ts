@@ -9,7 +9,7 @@ type Store<T> = {
 	sampleAll(): T[];
 	read(): T;
 	readAll(): T[];
-	setState(f: (row: T) => T): void;
+	write(f: (row: T) => T): void;
 	getReadStream: () => S.Computation<T[]>;
 	focus<U>(
 		get: (row: T) => U[] | [],
@@ -178,9 +178,16 @@ export function createStore<T>(name:string, table: T[]): Store<T> {
 	// because the state tree is being set to two different immutable
 	// objects and result sets
 	const stateStream = S.data(table, () => true);
-	
-	const setState: Store<T>["setState"] = (f) => {
-		stateStream(S.sample(stateStream).map( row => f(row) ))
+	let lastWrite = table
+
+	let runOncePerTick = () => {
+		stateStream(lastWrite)
+	}
+
+	const write: Store<T>["write"] = (f) => {
+		lastWrite = lastWrite.map( row => f(row) )
+
+		S.runOncePerTick(runOncePerTick)
 	};
 
 	const path = [name]
@@ -188,7 +195,7 @@ export function createStore<T>(name:string, table: T[]): Store<T> {
 	let store : Store<T> = {
 		sample: () => S.sample(stateStream)[0],
 		sampleAll: () => S.sample(stateStream),
-		setState,
+		write,
 		read: () => stateStream()[0],
 		readAll: () => stateStream(),
 		getReadStream: () => stateStream,
@@ -202,11 +209,12 @@ export function createStore<T>(name:string, table: T[]): Store<T> {
 	};
 
 	notify.set(store, (f) => {
-		stateStream( 
-			S.sample(stateStream).map( 
-				row => f(row)
-			)
-		);
+		
+		lastWrite = lastWrite.map( 
+			row => f(row)
+		)
+		
+		S.runOncePerTick(runOncePerTick)
 	});
 
 	return store;
@@ -227,7 +235,7 @@ function createChildStore<Parent, Child>(
 		(tableA, tableB) => tableA.length === tableB.length	&& tableA.every( (rowA,i) => rowA === tableB[i])
 	);
 
-	const setState = (f: (row: Child) => Child) => {
+	const write = (f: (row: Child) => Child) => {
 		notify.get(parentStore)!(
 			(parent: Parent) => setter(parent, f)
 		);
@@ -238,7 +246,7 @@ function createChildStore<Parent, Child>(
 		sampleAll: () => S.sample(read$),
 		read: () => read$()[0],
 		readAll: () => read$(),
-		setState,
+		write,
 		getReadStream: () => read$,
 		focus,
 		prop,

@@ -4,6 +4,8 @@ import test from 'tape'
 type User = { id: number, name: string, tags: string[] }
 type Project = { id: number, name: string }
 
+import * as U from '../lib/utils.js'
+
 test('caching', t => {
 
     Store.root((dispose) => {
@@ -74,19 +76,19 @@ test('propagation', t => {
             .filter( x => project_id.read() == null || x.project_id == project_id.read() )
         
 
+        type Project = ReturnType<typeof project.read>;
+        let projectsRecorded : Project[] = []
         S.computation(() => {
-            console.log('project.read()', project.readAll())
+            console.log(project.read())
+            projectsRecorded.push( project.read() )
         })
 
-        // store.prop('schedule_id').setState( x => x )
-        
-      
         S.freeze(() => {
-            store.prop('schedule_id').setState( () => null )
-            store.prop('schedule_id').setState( () => 3 )
-            store.prop('project_id').setState( () => null )
-            // store.prop('organization_id').setState( () => null )
+            project_id.write(() => 3)
+            schedule_id.write(() => 3)
         })
+        // schedule_id.write(() => 2)
+        console.log(projectsRecorded)
         dispose()
     })
 

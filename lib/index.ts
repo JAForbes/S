@@ -38,6 +38,34 @@ type State = 'frozen' | 'propagating' | 'idle'
 
 let state : State = 'idle';
 
+export const getPropagationState = () => state
+
+const eventListeners = {
+    freezeEnd: new Set<() => void>(),
+    propagatingEnd: new Set<() => void>(),
+}
+type InternalEvent = keyof typeof eventListeners;
+
+export const removeEventListener = (event: InternalEvent, callback: () => void) => {
+    eventListeners[event].delete(callback)
+}
+export const addEventListener = (event: InternalEvent, callback: () => void) => {
+    eventListeners[event].add(callback)
+}
+
+export const runOncePerTick = (callback: () => void) => {
+    removeEventListener('freezeEnd', callback)
+    removeEventListener('propagatingEnd', callback)
+
+    if ( state === 'frozen' ) {
+		addEventListener('freezeEnd', callback)
+    } else if ( state === 'propagating' ) {
+    	addEventListener('propagatingEnd', callback)
+    } else {
+        callback()
+    }
+}
+
 let activeRoot : Root | null = null;
 
 const rootChildren = new WeakMap<Root, Set<ComputationInternal<unknown>>>();
@@ -409,6 +437,8 @@ type SyncComputationVisitor<T> =
 
 export type Computation<T> = () => T;
 
+export const SKIP = {}
+
 export function computation<T>( fn: SyncComputationVisitor<T>, seed: T ) : Computation<T>
 export function computation<T>( fn: SyncComputationVisitor<T>, seed?: T) : Computation<T | undefined> 
 export function computation<T>( fn: SyncComputationVisitor<T>, seed: T ) : Computation<T> {
@@ -416,11 +446,17 @@ export function computation<T>( fn: SyncComputationVisitor<T>, seed: T ) : Compu
         type: "Stream",
         tag: 'SyncComputation',
         value: seed,
+        next: seed,
         compute(){
 
             active.unshift(stream)
-            stream.next = fn(stream.value!);
+            const out = fn(stream.value!);
             active.shift()
+            if ( out === SKIP ) {
+                return stream.value
+            }
+            stream.next = out
+            
 
             if ( state === 'idle' ) {
                 stream.value = stream.next
@@ -628,7 +664,9 @@ export function freeze(f: VoidFunction) : void {
 
     state = oldState
 
-
+    for( let callback of eventListeners.freezeEnd ){
+        callback()
+    }
     tick()
 }
 
@@ -767,9 +805,17 @@ export function tick(){
                 next()
             }
         })
+
+        if ( nextTicks.length == 0 ) {
+            for( let callback of eventListeners.propagatingEnd ) {
+                callback()
+            }
+        }
     }
     
     runawayTicks = 0;
+
+
 }
 
 

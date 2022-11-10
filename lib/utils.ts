@@ -5,18 +5,18 @@ export const map = <T,U>(f: ((x:T) => U), computation: S.Computation<T>) => S.co
 }, f(S.sample(computation)))
 
 export const dropRepeatsWith = <T>(signal: S.Computation<T>, equality: (a: T, b: T) => boolean) => {
-	let out = S.data( S.sample(signal), equality )
-	let i = 0
-	S.computation<T>((prev) => {
+	
+	let i = 0;
+	return S.computation<T>((prev) => {
+		i++
 		let next = signal()
 
-		if ( i > 0 && !equality(prev, next) ) {
-			out(next)
+		if ( i === 1  && !equality(prev, next) ) {
+			return next
+		} else {
+			return S.SKIP as T
 		}
-		i++
-		return next
-	})
-	return out;
+	}, S.sample(signal))
 }
 
 export const mergeAll = <T>(computations: S.Computation<T>[]) : S.Computation<T[]> => {
