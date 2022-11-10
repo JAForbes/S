@@ -220,6 +220,15 @@ export function createStore<T>(name:string, table: T[]): Store<T> {
 	return store;
 }
 
+const compareResultSetReferences = <T>(a:T[],b:T[]) => {
+	for( let i = 0; i < Math.max(a.length, b.length); i++ ) {
+		if ( a[i] !== b[i] ) {
+			return false
+		}
+	}
+	return true
+}
+
 function createChildStore<Parent, Child>(
 	getter: (parent: Parent) => Child[],
 	setter: (parent: Parent, update: (x:Child) => Child ) => Parent,
@@ -227,12 +236,13 @@ function createChildStore<Parent, Child>(
 	path: string[],
 ): Store<Child> {
 
-	const read$ = U.dropRepeatsWith(
+	const read$ =
+	 U.dropRepeatsWith(
 		U.map( (results) => {
 			let out = results.flatMap( row => getter(row) )
 			return out
 		}, parentStore.getReadStream()),
-		(tableA, tableB) => tableA.length === tableB.length	&& tableA.every( (rowA,i) => rowA === tableB[i])
+		compareResultSetReferences
 	);
 
 	const write = (f: (row: Child) => Child) => {

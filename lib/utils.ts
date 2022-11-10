@@ -11,7 +11,7 @@ export const dropRepeatsWith = <T>(signal: S.Computation<T>, equality: (a: T, b:
 		i++
 		let next = signal()
 
-		if ( i === 1  && !equality(prev, next) ) {
+		if ( i === 1 || !equality(prev, next) ) {
 			return next
 		} else {
 			return S.SKIP as T
