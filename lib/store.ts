@@ -167,7 +167,17 @@ function focus<T, U> (
 }
 
 export function createStore<T>(name:string, table: T[]): Store<T> {
-	const stateStream = S.data(table);
+
+	// we use () => as equality because the result set changes all the
+	// time, its not a legitimate way to detect conflicts, you'd have
+	// to do some really deep comparisons to identify duplicate writes
+	// and for this system it wouldn't mean anything
+	//
+	// leaf conflicts should probably be captured/detected in this layer
+	// not in S, but any 2 writes will be techinically deemed a conflict 
+	// because the state tree is being set to two different immutable
+	// objects and result sets
+	const stateStream = S.data(table, () => true);
 	
 	const setState: Store<T>["setState"] = (f) => {
 		stateStream(S.sample(stateStream).map( row => f(row) ))
@@ -211,7 +221,8 @@ function createChildStore<Parent, Child>(
 
 	const read$ = U.dropRepeatsWith(
 		U.map( (results) => {
-			return results.flatMap( row => getter(row) )
+			let out = results.flatMap( row => getter(row) )
+			return out
 		}, parentStore.getReadStream()),
 		(tableA, tableB) => tableA.length === tableB.length	&& tableA.every( (rowA,i) => rowA === tableB[i])
 	);

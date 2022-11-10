@@ -5,7 +5,7 @@ export const map = <T,U>(f: ((x:T) => U), computation: S.Computation<T>) => S.co
 }, f(S.sample(computation)))
 
 export const dropRepeatsWith = <T>(signal: S.Computation<T>, equality: (a: T, b: T) => boolean) => {
-	let out = S.data( S.sample(signal) )
+	let out = S.data( S.sample(signal), equality )
 	let i = 0
 	S.computation<T>((prev) => {
 		let next = signal()

@@ -283,7 +283,7 @@ export function on<T,U>(
 
 // these overloads are here to ensure streams with an initial value
 // are not "possibly undefined"
-export function value<T>(value: T, predicate:(a:T,b:T) => boolean =((a,b) => a === b) ){
+export function value<T>(value: T, equality:EqualityCheck<T> = strictEquality ){
 
     const stream : DataInternal<T> = {
         type: 'Stream',
@@ -309,9 +309,9 @@ export function value<T>(value: T, predicate:(a:T,b:T) => boolean =((a,b) => a =
                 nextVal = args[0]
             }
 
-            if ( streamsToResolve.has(stream) && nextVal != stream.next ) {
+            if ( streamsToResolve.has(stream) && !equality(nextVal, stream.next!) ) {
                 throw new Conflict()
-            } else if (predicate(nextVal,stream.value!)) {
+            } else if (equality(nextVal,stream.value!)) {
                 return stream.value
             } else  {
                 stream.next = nextVal
@@ -339,11 +339,15 @@ export function value<T>(value: T, predicate:(a:T,b:T) => boolean =((a,b) => a =
     return record(accessor)
 }
 
+type EqualityCheck<T> = (a:T, b:T) => boolean;
+const strictEquality = <T>(a: T, b: T) => a === b;
+
 // these overloads are here to ensure streams with an initial value
 // are not "possibly undefined"
+export function data<T>(value: T, equality: EqualityCheck<T>) : Signal<T>;
 export function data<T>(value: T) : Signal<T>;
 export function data<T>(value?: T) : Signal<T | undefined>
-export function data<T>(value?: T){
+export function data<T>(value?: T, equality: EqualityCheck<T> = strictEquality){
 
     const stream : DataInternal<T> = {
         type: 'Stream',
@@ -369,7 +373,7 @@ export function data<T>(value?: T){
                 nextVal = args[0]
             }
 
-            if ( streamsToResolve.has(stream) && nextVal != stream.next ) {
+            if ( streamsToResolve.has(stream) && !equality(nextVal, stream.next!) ) {
                 throw new Conflict()
             } else {
                 stream.next = nextVal
