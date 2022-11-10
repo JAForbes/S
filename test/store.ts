@@ -69,19 +69,20 @@ test('propagation', t => {
             store
             .prop('projects')
             .unnest()
-            .filter( x => x.organization_id != null && x.organization_id == organization_id.read() )
-            .filter( x => x.schedule_id != null && x.schedule_id == schedule_id.read() )
-            .filter( x => x.project_id != null && x.project_id == project_id.read() )
+            .filter( x => x.organization_id == organization_id.read() )
+            .filter( x => schedule_id.read() == null || x.schedule_id == schedule_id.read() )
+            .filter( x => project_id.read() == null || x.project_id == project_id.read() )
         
 
         S.computation(() => {
-            console.log('project.read()', project.read())
+            console.log('project.read()', project.readAll())
         })
 
         // store.prop('schedule_id').setState( x => x )
-        store.prop('schedule_id').setState( () => 3 )
+        
       
         S.freeze(() => {
+            store.prop('schedule_id').setState( () => null )
             store.prop('schedule_id').setState( () => 3 )
             store.prop('project_id').setState( () => null )
             // store.prop('organization_id').setState( () => null )
