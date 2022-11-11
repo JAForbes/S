@@ -7,12 +7,41 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "Launch Program",
+            "name": "S Tests",
             "skipFiles": [
                 "<node_internals>/**"
             ],
             "program": "${workspaceFolder}/test/test.ts",
             "runtimeArgs": ["--loader", "ts-node/esm"]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Store Tests",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/test/store.ts",
+            "runtimeArgs": ["--loader", "ts-node/esm"]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Freeze Tests",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/test/freeze.ts",
+            "runtimeArgs": ["--loader", "ts-node/esm"]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Idea",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/lib/idea2.js"
         }
     ]
 }

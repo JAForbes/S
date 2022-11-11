@@ -38,6 +38,34 @@ type State = 'frozen' | 'propagating' | 'idle'
 
 let state : State = 'idle';
 
+export const getPropagationState = () => state
+
+const eventListeners = {
+    freezeEnd: new Set<() => void>(),
+    propagatingEnd: new Set<() => void>(),
+}
+type InternalEvent = keyof typeof eventListeners;
+
+export const removeEventListener = (event: InternalEvent, callback: () => void) => {
+    eventListeners[event].delete(callback)
+}
+export const addEventListener = (event: InternalEvent, callback: () => void) => {
+    eventListeners[event].add(callback)
+}
+
+export const runOncePerTick = (callback: () => void) => {
+    removeEventListener('freezeEnd', callback)
+    removeEventListener('propagatingEnd', callback)
+
+    if ( state === 'frozen' ) {
+		addEventListener('freezeEnd', callback)
+    } else if ( state === 'propagating' ) {
+    	addEventListener('propagatingEnd', callback)
+    } else {
+        callback()
+    }
+}
+
 let activeRoot : Root | null = null;
 
 const rootChildren = new WeakMap<Root, Set<ComputationInternal<unknown>>>();
@@ -93,6 +121,12 @@ let nextTicks : Array<() => any> = [];
  */
 let parents = new WeakMap<ComputationInternal<unknown>, Set<ComputationInternal<unknown>>>();
 let children = new WeakMap<ComputationInternal<unknown>, Set<ComputationInternal<unknown>>>();
+let ids = new WeakMap<any, string>();
+const randomId = () => Math.random().toString(15)
+const record = (x:any) => {
+    ids.set(x, randomId())
+    return x
+}
 
 let computingOnComputation : boolean = false;
 
@@ -124,11 +158,14 @@ export interface Signal<T, U=T> {
     ( fn: (( x: U ) => U ) ) : U;
 }
 
-export type AnyMap<K extends object,V> = WeakMap<K, V> | Map<K, V>;
+export type AnyMap<K,V> =
+    K extends object
+    ? WeakMap<K, V> | Map<K, V>
+    : Map<K,V>;
 
 // Typed version of https://www.npmjs.com/package/xet
 // by @barneycarroll
-export function xet<K extends object, V>(
+export function xet<K, V>(
     map: AnyMap<K,V>,
     key: K,
     fn: (key: K, map: AnyMap<K,V>) => V
@@ -227,6 +264,8 @@ export function on<T,U>(
         }
     }
 
+    ids.set(stream, randomId())
+
     // whatever active was when this was defined
     // is our parents
     parents.set(stream, new Set(active))
@@ -254,7 +293,7 @@ export function on<T,U>(
         stream.compute()
     }
 
-    return () => {
+    return record(() => {
 
         if ( active[0] ) {
             xet(dependents, stream, () => new Set())
@@ -266,13 +305,13 @@ export function on<T,U>(
         } else {
             return stream.value as U
         }
-    }
+    })
 }
 
 
 // these overloads are here to ensure streams with an initial value
 // are not "possibly undefined"
-export function value<T>(value: T, predicate:(a:T,b:T) => boolean =((a,b) => a === b) ){
+export function value<T>(value: T, equality:EqualityCheck<T> = strictEquality ){
 
     const stream : DataInternal<T> = {
         type: 'Stream',
@@ -280,6 +319,8 @@ export function value<T>(value: T, predicate:(a:T,b:T) => boolean =((a,b) => a =
         next: value,
         value
     }
+
+    ids.set(stream, randomId())
 
     let accessor = (...args: T[] | [(( x?: T ) => T )] ) => {
 
@@ -296,9 +337,9 @@ export function value<T>(value: T, predicate:(a:T,b:T) => boolean =((a,b) => a =
                 nextVal = args[0]
             }
 
-            if ( streamsToResolve.has(stream) && nextVal != stream.next ) {
+            if ( streamsToResolve.has(stream) && !equality(nextVal, stream.next!) ) {
                 throw new Conflict()
-            } else if (predicate(nextVal,stream.value!)) {
+            } else if (equality(nextVal,stream.value!)) {
                 return stream.value
             } else  {
                 stream.next = nextVal
@@ -323,14 +364,18 @@ export function value<T>(value: T, predicate:(a:T,b:T) => boolean =((a,b) => a =
         }
     }
 
-    return accessor
+    return record(accessor)
 }
+
+type EqualityCheck<T> = (a:T, b:T) => boolean;
+const strictEquality = <T>(a: T, b: T) => a === b;
 
 // these overloads are here to ensure streams with an initial value
 // are not "possibly undefined"
+export function data<T>(value: T, equality: EqualityCheck<T>) : Signal<T>;
 export function data<T>(value: T) : Signal<T>;
 export function data<T>(value?: T) : Signal<T | undefined>
-export function data<T>(value?: T){
+export function data<T>(value?: T, equality: EqualityCheck<T> = strictEquality){
 
     const stream : DataInternal<T> = {
         type: 'Stream',
@@ -338,6 +383,8 @@ export function data<T>(value?: T){
         next: value,
         value
     }
+
+    ids.set(stream, randomId())
 
     let accessor = (...args: T[] | [(( x?: T ) => T )] ) => {
 
@@ -354,7 +401,7 @@ export function data<T>(value?: T){
                 nextVal = args[0]
             }
 
-            if ( streamsToResolve.has(stream) && nextVal != stream.next ) {
+            if ( streamsToResolve.has(stream) && !equality(nextVal, stream.next!) ) {
                 throw new Conflict()
             } else {
                 stream.next = nextVal
@@ -379,7 +426,7 @@ export function data<T>(value?: T){
         }
     }
 
-    return accessor
+    return record(accessor)
 }
 
 type SyncComputationVisitor<T> =
@@ -390,17 +437,26 @@ type SyncComputationVisitor<T> =
 
 export type Computation<T> = () => T;
 
+export const SKIP = {}
+
+export function computation<T>( fn: SyncComputationVisitor<T>, seed: T ) : Computation<T>
 export function computation<T>( fn: SyncComputationVisitor<T>, seed?: T) : Computation<T | undefined> 
 export function computation<T>( fn: SyncComputationVisitor<T>, seed: T ) : Computation<T> {
     const stream : SyncComputationInternal<T> = {
         type: "Stream",
         tag: 'SyncComputation',
         value: seed,
+        next: seed,
         compute(){
 
             active.unshift(stream)
-            stream.next = fn(stream.value!);
+            const out = fn(stream.value!);
             active.shift()
+            if ( out === SKIP ) {
+                return stream.value
+            }
+            stream.next = out
+            
 
             if ( state === 'idle' ) {
                 stream.value = stream.next
@@ -409,6 +465,8 @@ export function computation<T>( fn: SyncComputationVisitor<T>, seed: T ) : Compu
             }
         }
     }
+
+    ids.set(stream, randomId())
 
     // whatever active was when this was defined
     // is our parents
@@ -428,9 +486,28 @@ export function computation<T>( fn: SyncComputationVisitor<T>, seed: T ) : Compu
         .add(stream)
     rootOfStream.set(stream, activeRoot)
 
-    stream.compute()
+    // for when initial run of a computation triggers a write
+    // which should behave as if time is frozen
+    if ( state === 'idle' ) {
 
-    return () => {
+        state = 'propagating'
+        stream.compute()
+        state = 'idle'
+    
+        // some nested writes happened
+        if ( nextTicks.length > 0 ) {
+            tick()
+        }  else {
+            for ( let s of streamsToResolve ) {
+                s.value = s.next
+            }
+            streamsToResolve.clear()
+        }
+    } else {
+        stream.compute()
+    }
+
+    return record(() => {
 
         if ( active[0] ) {
             xet(dependents, stream, () => new Set())
@@ -443,7 +520,7 @@ export function computation<T>( fn: SyncComputationVisitor<T>, seed: T ) : Compu
             return stream.value!
         }
 
-    }
+    })
 }
 
 // only defining these types as I couldn't
@@ -515,6 +592,8 @@ export function generator<T>( _fn: StreamGeneratorVisitor<T>, seed?: T ) : Compu
         }
     }
 
+    ids.set(stream, randomId())
+
     async function iterate<T>(it: StreamIterator<T>){
         let value, done, next;
         do {
@@ -553,7 +632,7 @@ export function generator<T>( _fn: StreamGeneratorVisitor<T>, seed?: T ) : Compu
 
     stream.compute()
 
-    return () => {
+    return record(() => {
         if (active[0]) {
             xet(dependents, stream, () => new Set())
                 .add(active[0])
@@ -563,7 +642,7 @@ export function generator<T>( _fn: StreamGeneratorVisitor<T>, seed?: T ) : Compu
             return stream.next
         }
         return stream.value
-    }
+    })
 }
 
 export function freeze(f: VoidFunction) : void {
@@ -572,8 +651,6 @@ export function freeze(f: VoidFunction) : void {
         return;
     }
 
-
-    
     // If called within a computation, the system is already frozen, so freeze is inert.
     if (state == 'propagating') {
         f()
@@ -587,7 +664,9 @@ export function freeze(f: VoidFunction) : void {
 
     state = oldState
 
-
+    for( let callback of eventListeners.freezeEnd ){
+        callback()
+    }
     tick()
 }
 
@@ -705,17 +784,38 @@ export function tick(){
     state = 'idle'
 
     if (runawayTicks > 0) return;
-    while ( nextTicks.length ) {
-        let next = nextTicks.shift()
+    
 
+    // while processing a tick, nextTicks
+    // may expand, so we need to recursively
+    // update
+    // we use a while loop to prevent stack
+    // overflow, the above early exit detects
+    // when our tick is nested and allows the
+    // parent tick to handle resuming the propagation
+    while ( nextTicks.length > 0 ) {
         runawayTicks++
+        freeze(() => {
+            let xs = nextTicks.slice()
+            nextTicks.length = 0
+            for( let next of xs ) {
+                if (runawayTicks > MAX_TICKS ) {
+                    throw new RunawayTicks()
+                }
+                next()
+            }
+        })
 
-        if (runawayTicks > MAX_TICKS ) {
-            throw new RunawayTicks()
+        if ( nextTicks.length == 0 ) {
+            for( let callback of eventListeners.propagatingEnd ) {
+                callback()
+            }
         }
-        next!()
     }
+    
     runawayTicks = 0;
+
+
 }
 
 
@@ -725,4 +825,8 @@ export function sample<T>(signal: Signal<T>){
     let value = signal()
     active = oldActive
     return value;
+}
+
+export function id( s: Signal<any> ) {
+    return ids.get(s)
 }
