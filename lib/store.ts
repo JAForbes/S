@@ -19,11 +19,6 @@ type Store<T> = {
 	prop<K extends keyof T>(key: K): Store<T[K]>,
 	unnest: () => Store<Unnest<T>>,
 	
-	where: typeof where;
-
-	// whereUnnested: ReturnType<Store<T>["unnest"]>["where"]
-	whereUnnested: typeof whereUnnested
-
 	filter( f: ( (row:T) => boolean) ): Store<T>
 
 	path: string[]
@@ -78,80 +73,6 @@ function filter<T>(this: Store<T>, f: (row:T) => boolean) {
 	)
 }
 
-function computationToString(s: any){
-	const id = S.id(s)
-	if (id) {
-		return `signal{${id}}`
-	}
-	return s + ''
-}
-
-function where<
-	T,
-	K extends keyof T,
-	V extends T[K],
-	R extends Partial<Record<K, S.Computation<V>>>
->(this: Store<T>, record: R) : Store<T> {
-	const anyRecord = record as Record<string, any>;
-	const newPath = 
-		this.path.concat('where({'+Object.entries(record).map(
-			([k,v]) => `${k}: ${computationToString(v)}`
-		)+'})')
-
-	return S.xet( instances, newPath.join('.'), () =>
-		createChildStore(
-			row => Object.entries(anyRecord).flatMap(
-					([k,v]) => (row as any)[k] === v() ? [row] : []
-			) as any,
-			(row, update) => {
-				if ( 
-					Object.entries(anyRecord).every(
-						([k,v]) => (row as any)[k] === v()
-					)	
-				) {
-					return update(row as any) as any as T
-				}
-				return row
-			},
-			this,
-			newPath
-		)
-	)
-}
-
-function whereUnnested <T, TT extends Unnest<T>, K extends keyof TT, V extends TT[K]>(
-	this: Store<T>
-	, record: Partial<
-		Record<K, S.Computation<V> >
-	>
-) : Store<Unnest<T>> {
-
-	const anyRecord = record as Record<string, any>;
-	const newPath = 
-		this.path.concat('whereUnnested({'+Object.entries(record).map(
-			([k,v]) => `${k}: ${computationToString(v)}`
-		)+'})')
-
-	return S.xet(instances, newPath.join('.'), () => 
-		createChildStore(
-			arrayRow => (arrayRow as any[]).filter( unnestedRow =>  
-				Object.entries(anyRecord).every(
-					([k,v]) => unnestedRow[k] === v()
-				)
-			) as any,
-			(arrayRow, update) => (arrayRow as any[]).map( unnestedRow => 
-				Object.entries(anyRecord).every(
-					([k,v]) => unnestedRow[k] === v()
-				)
-				? update(unnestedRow)
-				: unnestedRow
-			) as any,
-			this,
-			newPath,
-		)
-	)
-}
-
 function focus<T, U> (
 	this: Store<T>
 	, getter: (row: T) => U[] | []
@@ -201,8 +122,6 @@ export function createStore<T>(name:string, table: T[]): Store<T> {
 		getReadStream: () => stateStream,
 		focus,
 		prop,
-		where,
-		whereUnnested,
 		unnest,
 		filter,
 		path
@@ -260,8 +179,6 @@ function createChildStore<Parent, Child>(
 		getReadStream: () => read$,
 		focus,
 		prop,
-		where,
-		whereUnnested,
 		unnest,
 		filter,
 		path

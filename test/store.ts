@@ -147,9 +147,8 @@ test('updatable views', t => {
         usersStore.write( () => [{ id:1, name: 'James', tags: ['red'] }, { id:2, name: 'Emmanuel', tags: ['blue'] }, { id: 3, name: 'Jack', tags: ['red']}])
         projectsStore.write( () => [{ id:1, name: 'NSW456'}, { id:2, name: 'QLD123'}])
 
-        let userStore = usersStore.whereUnnested({ "id": user_id })
-
-        let projectStore = projectsStore.whereUnnested({ "id": project_id })
+        let userStore = usersStore.unnest().filter(x => x.id === user_id() )
+        let projectStore = projectsStore.unnest().filter( x => x.id === project_id() )
 
         const nameStore = userStore.prop("name")
 
