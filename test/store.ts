@@ -6,7 +6,7 @@ type Project = { id: number, name: string }
 
 import * as U from '../lib/utils.js'
 
-test('caching', t => {
+test('query caching', t => {
 
     Store.root((dispose) => {
         let store = Store.createStore('@', [{
@@ -75,8 +75,8 @@ test('propagation', t => {
                 store;
                 let answer = (
                     x.organization_id == organization_id.read() 
-                    && schedule_id.read() == null || x.schedule_id == schedule_id.read()
-                    && project_id.read() == null || x.project_id == project_id.read()
+                    && (schedule_id.read() == null || x.schedule_id == schedule_id.read())
+                    && (project_id.read() == null || x.project_id == project_id.read())
                 )
 
                 return answer
@@ -86,110 +86,120 @@ test('propagation', t => {
         type Project = ReturnType<typeof project.read>;
         let projectsRecorded : Project[] = []
         S.computation(() => {
-            console.log(project.read())
             projectsRecorded.push( project.read() )
         })
 
+        t.deepEquals(projectsRecorded, [
+            { project_id: 1, schedule_id: 1, organization_id: 1 }
+        ], '1st evaluation of computation')
+
+        
         S.freeze(() => {
             project_id.write(() => 3)
             schedule_id.write(() => 3)
         })
-        // schedule_id.write(() => 2)
-        console.log(projectsRecorded)
+
+        t.deepEquals(projectsRecorded, [
+            { project_id: 1, schedule_id: 1, organization_id: 1 },
+            { project_id: 3, schedule_id: 3, organization_id: 1 }
+        ], '2 writes in a freeze triggered only 1 emit')
+
+        projectsRecorded.length = 0
+
+        schedule_id.write(() => 2)
+        project_id.write(() => 2)
+        organization_id.write(() => 2)
+
+        t.deepEquals(projectsRecorded, [
+            undefined,
+            undefined,
+            { project_id: 2, schedule_id: 2, organization_id: 2 }
+        ], '3 writes, 3 emits')
         dispose()
     })
 
     t.end()
 })
 
-// currently freeze crashes because for every write we get a new result set
-// and each result set is a new memory reference, so S rightfully thinks
-// we're setting two different values for the same tick
-// 
-// I think the solution is to not store the result set in the signal
-// but instead have multiple signals, one for each row in the result set
-//
-// I'm not sure what the ramifcations of this are, but it feels like
-// the right approach because then there's no special equality rules
-// and no tight coupling between S and the store
-// not that tight coupling would be bad, but alternatives should be explored
-// first
-//
-// I think we can have a signal that manages the other signals, so if
-// the count changes a new signal can be created/destroyed
-// this might actually make the propagation more granular too which would
-// be cool
-//
-// also considered special equality functions, disabling conflicts
-// batching changes
-// maybe reusing the result set reference if the length/order hasn't changed
-// tried it... won't work for unnest as we can't mutate the real row data
-// 
-// all have drawbacks
-//
-// test('freeze', t => {
-    // S.freeze(() => {
-    //     store.prop('schedule_id').setState( () => 3 )
-    //     store.prop('project_id').setState( () => null )
-    //     // store.prop('organization_id').setState( () => null )
-    // })
+test('updatable views', t => {
 
-// })
+    Store.root(() => {
 
-// test('store', t => {
+        let counts = {
+            store: 0,
+            users: 0,
+            projects: 0,
+            project: 0,
+            user: 0
+        }
+        let store = Store.createStore('@', [{
+            users: [] as User[],
+            projects: [] as Project[]
+        }])
 
-//     Store.root(() => {
-
-//         let store = Store.createStore('@', [{
-//             users: [] as User[],
-//             projects: [] as Project[]
-//         }])
-
-//         let usersStore = store.prop('users')
+        let usersStore = store.prop('users')
         
-//         let projectsStore = store.prop('projects')
+        let projectsStore = store.prop('projects')
 
-//         let user_id = S.data(1)
-//         let project_id = S.data(2)
+        let user_id = S.data(1)
+        let project_id = S.data(2)
 
-//         usersStore.setState( () => [{ id:1, name: 'James', tags: ['red'] }, { id:2, name: 'Emmanuel', tags: ['blue'] }, { id: 3, name: 'Jack', tags: ['red']}])
-//         projectsStore.setState( () => [{ id:1, name: 'NSW456'}, { id:2, name: 'QLD123'}])
+        usersStore.write( () => [{ id:1, name: 'James', tags: ['red'] }, { id:2, name: 'Emmanuel', tags: ['blue'] }, { id: 3, name: 'Jack', tags: ['red']}])
+        projectsStore.write( () => [{ id:1, name: 'NSW456'}, { id:2, name: 'QLD123'}])
 
+        let userStore = usersStore.whereUnnested({ "id": user_id })
 
-//         let userStore = usersStore.whereUnnested({ "id": user_id })
+        let projectStore = projectsStore.whereUnnested({ "id": project_id })
 
-//         let projectStore = projectsStore.whereUnnested({ "id": project_id })
+        const nameStore = userStore.prop("name")
 
-//         const nameStore = userStore.prop("name")
+        S.computation(() => {
+            counts.store++
+            store.read()
+        })
+        S.computation(() => {
+            counts.users++
+            usersStore.read()
+        })
+        S.computation(() => {
+            counts.projects++
+            projectsStore.read()
+        })
+        S.computation(() => {
+            counts.project++
+            projectStore.read()
+        })
+        S.computation(() => {
+            counts.user++
+            userStore.read()
+        })
 
-//         S.computation(() => {
-//             console.log('store.read', store.read())
-//         })
-//         S.computation(() => {
-//             console.log('usersStore.read', usersStore.read())
-//         })
-//         S.computation(() => {
-//             console.log('projectsStore.read', projectsStore.read())
-//         })
-//         S.computation(() => {
-//             console.log('projectStore.read', projectStore.read())
-//         })
-//         S.computation(() => {
-//             console.log('userStore.read', userStore.read())
-//         })
+        console.log({counts})
+        t.deepEquals(counts, { store: 1, users: 1, projects: 1, project: 1, user: 1 }, '1 emit for setup')
+        nameStore.write(() => 'John')
+        t.deepEquals(counts, { store: 2, users: 2, projects: 1, project: 1, user: 2 }, 'name changed = store,users,user update only')
 
-//         console.log('updating name store')
-//         nameStore.setState(() => 'John')
+        const redUsers = store.prop('users')
+            .unnest()
+            .filter( x => x.tags.includes('red') )
 
-//         const redUsers = store.prop('users')
-//             .unnest()
-//             .filter( x => x.tags.includes('red') )
-
+        t.deepEquals(counts, { store: 2, users: 2, projects: 1, project: 1, user: 2 }, 'Defining new query doesnt trigger propagation')
         
-//         redUsers.prop('name').setState( x => x + '!')
-//         console.log(redUsers.sampleAll())
-//         console.log(store.sample().users)
+        redUsers.prop('name').write( x => x + '!')
 
-//     })
-//     t.end()
-// })
+        t.deepEquals(counts, { store: 3, users: 3, projects: 1, project: 1, user: 3 }, 'Writing to query updated expected upstream subscriptions')
+        
+
+        t.deepEquals(
+            store.sample().users,
+            [
+                { id: 1, name: 'John!', tags: [ 'red' ] },
+                { id: 2, name: 'Emmanuel', tags: [ 'blue' ] },
+                { id: 3, name: 'Jack!', tags: [ 'red' ] }
+            ]
+            , 'Update multiple objects matching a predicate'
+        )
+
+    })
+    t.end()
+})
