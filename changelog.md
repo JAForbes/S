@@ -1,4 +1,10 @@
 
+# Release v0.0.2
+
+### Patch Changes
+
+#### [Change package name for now (@JAForbes)](https://github.com/JAForbes/S/pull/6)
+
 # Release v0.0.1
 
 ### Patch Changes
