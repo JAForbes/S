@@ -4,28 +4,49 @@ This is me reimplementing S.js from first principles to try and understand it.
 
 Please do not use this in anything, its likely to change at a moments notice.
 
+## What is S even?
+
+A library that let's you write code that automatically updates when any referenced dependencies emit a new value.
+
+```js
+const second = S.data(1)
+setInterval(() => second(x => x + 1))
+
+S.computation(() => {
+    second()
+    console.log('I will rerun every second')
+})
+```
+
+The [original S.js](https://github.com/adamhaile/S) was written by Adam Haile.  Adam's implementation is fast and the API surface is small but powerful.
+
+S is both similar and different to other stream libraries you may have heard of like Rx.js, xstream, most.js, flyd.  But in these libraries streams have explicit dependencies whereas in S dependencies are automatically tracked.
+
+Both approaches and strengths and weaknesses, but automatic dependency tracking has had a bit of a resurgence in reactive view frameworks like Vue.js, Solid.js, Preact.  The most famous example of auto dependency tracking would be Knockout.js
+
+Why do all these mentioned frameworks use auto dependency tracking?  It turns out works really well for efficiently rendering UIs because some nested component can reference something without knowing it is even being tracked.  This allows for a separation of concerns that works very well in user interface programming.
+
+For some diatribing on why this rewrite exists and other differences between the original S.js and this lib, check out the end of this README.md
+
 ## Terminology
 
 ### Signal
 
-We'll use the term signal, which is the same thing as a `stream`, an `observable`, an event emitter.
+We'll use the term signal, which is the same thing as a `stream`, an `observable` and an event emitter.
 
-From time to time you may see `stream` used instead of `signal`, but its all the same thing.
+From time to time you may see the term `stream` used instead of `signal`, but it is all the same thing.
 
 ### Tick
 
-If some computations are updating because you wrote to a signal, and in one of those computations you write to a different signal, that second write is scheduled to run when the current propagation of updates completes.
+Each time a signal emits a new event all dependent computations on that signal need to re-run, and all computations that rely on those computations also need to re-run and so on...
 
-Each time you write, there is a set of dependencies that need to update, and that is computed ahead of time.  That dependency list will not change if you are currently in the process of updating, instead those new dependencies are scheduled to run in a new update that will happen immediately after the current update.
+The process of updating these dependencies to have their new values is called a tick.  What makes S.js special compared to other libraries is what happens when one tick triggers writes that need their own new ticks to run.  In S.js, those new writes are deferred until the end of the current update cycle.  Then a new tick starts that includes all the dependencies of all the writes that were deferred.
 
-Each of these update phases is called a "tick".
+Each update is discrete, and that makes debugging easier.  Each discrete update is called a "tick".
 
 You can prevent a tick from starting immediately by using `S.freeze`.  If you write to a signal while you already in a tick, you are effectively writing with an S.freeze block, where the updates are deferred until the next update.
 
-> 🤔 Ok, but why?  In other stream libraries you can end up in very complicated debugging scenarious where a complex has overlapping dependency trees and they will trigger infinite propagations in unexpected ways.  This process of having distinct scheduled batches of updates gives us a fighting chance when debugging those runaway propagations.
-
-## Documentation
-
+## API Documentation
 
 ### `S.root`
 
@@ -109,7 +130,7 @@ b()
 // 50
 ```
 
-A computation can also access its previous value, you can also pass in a seed value as a second argument to ensure the previous value is not undefined on first invocation.
+A computation can access its previous value, and if you pass in a seed value as a second argument the previous value is guaranteed to not be undefined on the first invocation.
 
 ```js
 let count = S.computation(prev => {
@@ -133,7 +154,7 @@ count()
 
 ### `S.generator`
 
-The secret sauce of this library.  `S.generator `is exactly like `S.computation` but it allows you to have async resumable computations.
+The super power of this rewrite.  `S.generator `is exactly like `S.computation` but it allows you to have async resumable computations.
 
 ```js
 const thumbnail = S.generator(function * (){
@@ -154,9 +175,9 @@ S.computation(() => {
 })
 ```
 
-The above code will re-run any time `dogBreed` or `thumbnailSize` signal changes.  If an existing instance of this computation is already running, it will be cancelled, you can inspect the cancellation by using a `try {...} finally {...}` block.  
+The above code will re-run any time `dogBreed` or `thumbnailSize` signal changes.  If an existing instance of this computation is already running, it will be cancelled.  You can observe the cancellation by using a `try {...} finally {...}` block.  
 
-> 🥸 Why not use async / await?  Unlike `async` functions, generators can be suspended and resumed.  This allows us to track which generator context is active when a signal is referenced even if there's async code in between reads.  Also generators are cooler than async / await, time we all accepted that.
+> 🤔 Why not use async / await?  Unlike `async` functions, generators can be suspended and resumed.  This allows us to track which generator context is active when a signal is referenced even if there's async code in between reads.  Also generators are cooler than async / await, time we all accepted that.
 
 Currently a new instance of a generator cancels the old one, after dogfooding this a bit we may decide to expose options that allows you to specify what happens to the old instance when a new one starts.
 
@@ -207,7 +228,7 @@ If you call `freeze` when time is already frozen it has no additional effect.
 
 ### `S.cleanup`
 
-After the first run, everyime a computation runs any cleanup hooks will re-run.  This is helpful for imperative stateful APIs like `setTimeout` / `clearTimeout` or `addEventListener` / `removeEventListener`
+After the first run, every time a computation runs any cleanup hooks will re-run.  This is helpful for imperative stateful APIs like `setTimeout` / `clearTimeout` or `addEventListener` / `removeEventListener`
 
 ```js
 
@@ -232,56 +253,66 @@ S.computation(([oldElement, oldCallback]) => {
 
 ## Motivation for rewriting
 
-I co-own a company that builds apps and software both for our own use and for clients use.  I wanted to build a lot of higher level abstractions on top of S, but the fact the original library seems to not be actively maintained, and the fact other libraries like Solid have their own forks make me feel I needed to at least write it from scratch to understand it enough to de-risk the lack of maintenance on the original library.
+I wanted to build a lot of higher level abstractions on top of S, but the fact the original library seems to not be actively maintained, and the fact other libraries like Solid have their own forks make me feel I needed to at least write it from scratch to understand it enough to de-risk the lack of maintenance on the original library.
 
 Now I've rewritten it, I feel confident in maintaining this myself while building on top of it.
 
 ## Why not just use Solid / sinuous etc?
 
-Those libraries are great, but they are exploring a different problem domain.  I want to explore and most want to prioritize things other libraries likely won't.  But I think we can all learn from eachother by exploring this space together by following our own interests.
+Those libraries are great, but they are exploring a different problem domain.  I want to explore and prioritize things other libraries likely won't.  But I think we can all learn from each other by exploring this space together by following our own interests.
 
-For example, I'm not that interested in SSR or hydration.  But I'm very glad others are thinking about that and proving out that space.  I feel like we're still in the dark ages with state management and routing and I'd really like to explore more database inspired approaches in SPA's.  Maybe we can all learn from eachother and steal eachother's best ideas!
+For example, I'm not that interested in SSR or hydration.  But I'm very glad others are thinking about that and proving out that space.  I feel like we're still in the dark ages with state management and routing and I'd really like to explore more database inspired approaches in SPA's.  Maybe we can all learn from each other and steal each other's best ideas!
 
-Re databases, I'm very interested in "updatable views", store APIs that operate on sets, query languages, and sitting that on top of closer to metal the DOM view abstractions.  My philosophy is that its ok to expect an end user to learn some upfront concepts if doing so will pay off for them significantly.  I think libraries like React take an alternative approach where they want to hide the complexity from the developer by creating many layers of abstraction, the problem is, it never ends and the new abstractions end up being more complicated than the ones that were designed to be obscured.  In some cases it's a valid trade off, because the new abstraction layer is at least yours to control, but it prioritizes one audience over another and leads to some long term platform lock in.
+Re: databases, I'm very interested in "updatable views", store APIs that operate on sets, query languages, and sitting that on top of closer to metal the DOM view abstractions.  My philosophy is that it is ok to expect an end user to learn some upfront concepts if doing so will pay off for them significantly.  
 
-I think Solid is great beacuse it is so familiar for React devs, it leans into that familiarity, you have context, you have a hook like API, you have refs.  I really look forwrad to the day we can all write Solid.js code professionally instead of React.js, I want it to be that mainstream contender.  But there should also be alternatives that maybe don't have the same reach but allow people who really know the DOM / JS / S APIs to build simpler apps because of the thin layer of affordances provided.
+I think libraries like React take an alternative approach where they want to hide the complexity from the developer by creating many layers of abstraction. 
+
+The problem is, the new abstractions end up being as complicated as the ones that were intended to be obscured.  In some cases it's a valid trade off, because the new abstraction layer is at least yours to control, but it prioritizes one audience over another and leads to some long term platform lock in.
+
+I think Solid is great because it is so familiar for React dev's, it leans into that familiarity, you have context, you have a hook like API, you have refs.  I really look forward to the day we can all write Solid.js code professionally instead of React.js, I want it to be that mainstream contender.  But there should also be alternatives that maybe don't have the same reach but allow people who really know the DOM / JS / S APIs to build simpler apps because of the thin layer of affordances provided.
 
 ## Differences from the original S.js
 
-When I original wrote this, it was really just a learning project.  But now I feel I've got a grasp of how it works I plan to be more opinionated about the API surface as I plan to use it for other things.
+When I original wrote this, it was really just a learning project.  But now I feel I've got a grasp of how it works I plan to be more opinionated about the API surface as I intend to use it for other things.
 
-So not all features in the original S.js are included, and this library has some features the original doesn't have.
+Not all features in the original S.js are included, and this library has some features the original doesn't have.
 
 Some things this library doesn't include:
 
-- S.value
-- S.on
-- S.subclock
+- `S.value`
+- `S.on` 
+- `S.subclock`
+
+Both `S.value` and `S.on` are easy to add in userland, and I'm not sure if `S.subclock` is useful (yet).
 
 Some things this library has that the original didn't have
 
-- S.generator
-- S.id
+- `S.generator`
+- `S.id`
 
-I'm also not sure if S.root should be mandatory, so in the near future we may drop that and assume you know what you're doing.
+`S.generator` is a must have for the kind of state management work I want to be doing.  `S.id` is needed to help caching in higher level abstractions, but is also helpful for debugging.
+
+I'm also not sure if `S.root` should be mandatory, so in the near future we may drop that and assume you know what you're doing.
 
 ## Differences in Internal Architecture
 
 I didn't study how S worked internally, I tried to follow the code a few times and just tied myself in knots.  Instead I worked from the documentation and test suite and wrote a clean room implementation based on my understanding at the time.  As I understood the reason for different design decisions more I adjusted my implementation.
 
+This wasn't the most efficient way to do it, but it seemed to be the only way I could wrap my head around the API.
+
 Over the past few months there's been a lot of "aha!" moments where I gradually started to understand the point of some of the design decisions, that will likely continue for some time!
 
-I imagine the original S.js is faster than this implementation and probably has optimizations on hot paths that this library doesn't yet have.  But I think this architecture is very simple and easy to iterate on.
+I imagine the original S.js is faster than this implementation and probably has optimizations on hot paths that this library doesn't yet have.  But I think this architecture is very simple and easy to iterate on.  For my needs that is the highest priority.
 
-We've basically got a bunch of maps and weakmaps that track different states.  E.g. things that are scheduled to run, nodes that depend on other nodes, cleanups that should run when a computation next runs, the stack of active computations, signals that have values to resolve at the end of a transaction, signals that should be written in the next tick, parents of signals, children of signals.
+We've basically got a bunch of `Map`'s and `WeakMap`'s that track different states.  E.g. things that are scheduled to run, nodes that depend on other nodes, cleanups that should run when a computation next runs, the stack of active computations, signals that have values to resolve at the end of a transaction, signals that should be written in the next tick, parents of signals, children of signals.
 
 Once you understand those collections, the rest sort of falls into place, the code doesn't do much more than you'd expect.
 
-There is a few suprising code paths, but hopefully they could be modelled as collections too and unified as this implementation matures.
+There is a few surprising code paths, but hopefully they could be modelled as collections too and unified as this implementation matures.
 
 ## Contributions?
 
-I really like to worry about surface API way way late in the game, I want to work with the grain of the underlying technology and let it tell me what it wants to be, so that is largely mutually exclusive with the open source model.
+I really like to worry about surface API way way late in the game.  I want to work with the grain of the underlying technology and let it tell me what it wants to be, so that is largely mutually exclusive with the open source model.
 
 I'm iterating on various ideas with @barneycarroll and when we've bashed out a few more prototypes and formed a solid thesis of what we're even doing then it'd be great to encourage people to use and contribute to this and other libraries that we're working on.
 
