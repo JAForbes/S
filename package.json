@@ -2,6 +2,10 @@
   "name": "jaforbes-s",
   "version": "0.0.4",
   "module": "dist/index.js",
+  "main": "dist/index.js",
+  "exports": {
+    "./*": "./dist/*.js"
+  },
   "scripts": {
     "test": "node --loader ts-node/esm test/test.ts",
     "build": "rm -fr dist && npx rollup --config rollup.config.ts --configPlugin typescript"
@@ -21,7 +25,6 @@
   ],
   "homepage": "https://github.com/JAForbes/S#readme",
   "description": "",
-  "type": "module",
   "dependencies": {
     "xet": "^2.3.0"
   },
