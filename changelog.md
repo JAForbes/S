@@ -1,4 +1,10 @@
 
+# Release v0.0.3
+
+### Patch Changes
+
+#### [Docs and removing API surface (@JAForbes)](https://github.com/JAForbes/S/pull/8)
+
 # Release v0.0.2
 
 ### Patch Changes

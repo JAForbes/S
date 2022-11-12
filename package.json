@@ -1,6 +1,6 @@
 {
   "name": "jaforbes-s",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "module": "dist/index.js",
   "scripts": {
     "test": "node --loader ts-node/esm test/test.ts",
