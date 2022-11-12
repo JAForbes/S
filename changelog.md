@@ -1,4 +1,10 @@
 
+# Release v0.0.7
+
+### Patch Changes
+
+#### [Tested exports map (@JAForbes)](https://github.com/JAForbes/S/pull/16)
+
 # Release v0.0.6
 
 ### Patch Changes
