@@ -1,4 +1,13 @@
 
+# Release v0.0.6
+
+### Patch Changes
+
+#### [Reinstate type module (@JAForbes)](https://github.com/JAForbes/S/pull/14)
+
+
+#### [Try exports map in package.json (@JAForbes)](https://github.com/JAForbes/S/pull/12)
+
 # Release v0.0.4
 
 ### Patch Changes

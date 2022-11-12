@@ -1,6 +1,6 @@
 {
   "name": "jaforbes-s",
-  "version": "0.0.4",
+  "version": "0.0.6",
   "module": "dist/index.js",
   "main": "dist/index.js",
   "type": "module",
