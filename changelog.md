@@ -1,4 +1,10 @@
 
+# Release v0.0.4
+
+### Patch Changes
+
+#### [Docs (@JAForbes)](https://github.com/JAForbes/S/pull/10)
+
 # Release v0.0.3
 
 ### Patch Changes
