@@ -1,4 +1,10 @@
 
+# Release v0.0.8
+
+### Patch Changes
+
+#### [Rough documentation for store (@JAForbes)](https://github.com/JAForbes/S/pull/18)
+
 # Release v0.0.7
 
 ### Patch Changes
