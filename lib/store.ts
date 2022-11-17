@@ -30,46 +30,39 @@ type NotifyMap<T> = WeakMap<Store<T>, (
 
 const notify: NotifyMap<any> = new WeakMap();
 
-const instances: Map<string, Store<any>> = new Map()
+// come back to this later: https://github.com/JAForbes/S/issues/20
+// const instances: Map<string, Store<any>> = new Map()
 
 function prop<T, K extends keyof T>(this: Store<T>, key: keyof T) : Store<T[K]> {
 	const newPath = this.path.concat(String(key))
 
-	return S.xet(
-		instances
-		, newPath.join('.')
-		, () => createChildStore(
-			row => [row[key]]
-			, (parent, update) => ({ ...parent, [key]: update(parent[key])})
-			, this
-			, newPath
-		) as Store<T[K]>
-	)
+	return createChildStore(
+		row => [row[key]]
+		, (parent, update) => ({ ...parent, [key]: update(parent[key])})
+		, this
+		, newPath
+	) as Store<T[K]>
 	
 }
 function unnest<T>(this: Store<T>){
 	const newPath = this.path.concat('unnest()')
 
-	return S.xet(instances, newPath.join('.'), () => 
-		createChildStore(
-			arrayRow => (arrayRow as any[]),
-			(arrayRow, update) => (arrayRow as any[]).map( unnestedRow => update(unnestedRow) ) as T,
-			this,
-			newPath
-		)
+	return createChildStore(
+		arrayRow => (arrayRow as any[]),
+		(arrayRow, update) => (arrayRow as any[]).map( unnestedRow => update(unnestedRow) ) as T,
+		this,
+		newPath
 	)
 }
 
 function filter<T>(this: Store<T>, f: (row:T) => boolean) {
 	const newPath = this.path.concat('filter('+f+')')
 
-	return S.xet( instances, newPath.join('.'), () => 
-		createChildStore(
-			row => f(row) ? [row] : [],
-			(row, update) => (f(row) ? update(row) : row ),
-			this,
-			newPath
-		)
+	return createChildStore(
+		row => f(row) ? [row] : [],
+		(row, update) => (f(row) ? update(row) : row ),
+		this,
+		newPath
 	)
 }
 
@@ -80,11 +73,7 @@ function focus<T, U> (
 )  {
 	const key = `focus(${getter})`
 	const newPath = this.path.concat(key)
-	return S.xet(
-		instances,
-		newPath.join('.'),
-		() => createChildStore(getter, setter, this, newPath)
-	)
+	return createChildStore(getter, setter, this, newPath)
 }
 
 export function createStore<T>(name:string, table: T[]): Store<T> {

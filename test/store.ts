@@ -6,7 +6,38 @@ type Project = { id: number, name: string }
 
 import * as U from '../lib/utils.js'
 
-test('query caching', t => {
+test('dropRepeats', t => {
+
+    let emits : [string,number][] = []
+    S.root(() => {
+        let a = S.data(0)
+        let b = U.dropRepeatsWith(a, (a,b) => a === b)
+
+        S.computation(() => {
+            emits.push(['a', a()])
+        })
+        S.computation(() => {
+            emits.push(['b', b()])
+        })
+
+        a(0)
+        a(0)
+        a(1)
+    })
+
+    t.deepEquals(emits, [
+        [ 'a', 0 ],
+        [ 'b', 0 ],
+        [ 'a', 0 ],
+        [ 'a', 0 ],
+        [ 'a', 1 ],
+        [ 'b', 1 ]
+    ], 'b only emits when a changed')
+    t.end()
+})
+
+// will come back to this later see https://github.com/JAForbes/S/issues/20
+test.skip('query caching', t => {
 
     Store.root((dispose) => {
         let store = Store.createStore('@', [{
@@ -111,7 +142,6 @@ test('propagation', t => {
         organization_id.write(() => 2)
 
         t.deepEquals(projectsRecorded, [
-            undefined,
             undefined,
             { project_id: 2, schedule_id: 2, organization_id: 2 }
         ], '3 writes, 3 emits')
