@@ -4,7 +4,7 @@ import * as U from './utils.js'
 
 type Unnest<T> = T extends Array<any> ? T[number] : never;
 
-type Store<T> = {
+export type Store<T> = {
 	sample(): T;
 	sampleAll(): T[];
 	read(): T;
