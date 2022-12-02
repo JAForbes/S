@@ -1,4 +1,10 @@
 
+# Release v0.0.10
+
+### Patch Changes
+
+#### [Export store type (@JAForbes)](https://github.com/JAForbes/S/pull/25)
+
 # Release v0.0.9
 
 ### Patch Changes
