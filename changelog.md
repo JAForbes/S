@@ -1,4 +1,10 @@
 
+# Release v0.0.9
+
+### Patch Changes
+
+#### [Remove SKIP, caching, "fix" dropRepeats (@JAForbes)](https://github.com/JAForbes/S/pull/23)
+
 # Release v0.0.8
 
 ### Patch Changes

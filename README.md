@@ -317,3 +317,8 @@ I really like to worry about surface API way way late in the game.  I want to wo
 I'm iterating on various ideas with @barneycarroll and when we've bashed out a few more prototypes and formed a solid thesis of what we're even doing then it'd be great to encourage people to use and contribute to this and other libraries that we're working on.
 
 But for now, best to watch from a distance.
+
+
+## Undocumented Features
+
+For learning / debugging almost everything from the internals is temporarily exported.  Relying on anything that isn't documented will lead to highly unstable caller code so do not assume an export is officially part of the public API.

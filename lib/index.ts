@@ -74,13 +74,13 @@ const rootOfStream = new WeakMap<ComputationInternal<unknown>, Root>();
 /**
  * The computations that will need to rerun next tick
  */
-let toRun = new Set<ComputationInternal<unknown>>();
+export let toRun = new Set<ComputationInternal<unknown>>();
 
 /**
  * The direct dependencies of a stream, used in computeDependents
  * to compute all descendant dependencies at tick time
  */
-let dependents = new WeakMap<StreamInternal<unknown>, Set<ComputationInternal<unknown>>>();
+export let dependents = new WeakMap<StreamInternal<unknown>, Set<ComputationInternal<unknown>>>();
 
 /**
  * A computation can have n cleanups, we store them in a set for each stream
@@ -102,7 +102,7 @@ let active : ComputationInternal<unknown>[] = []
  * the stream value to update at the end of the tick
  * by putting those streams in a queue.
  */
-let streamsToResolve = new Set<StreamInternal<unknown>>;
+export let streamsToResolve = new Set<StreamInternal<unknown>>;
 
 /**
  * If a write happens when a propagation is already running
@@ -119,16 +119,18 @@ let nextTicks : Array<() => any> = [];
  * Without this your inner most computations will
  * update ^n number of nested computations, not fun!
  */
-let parents = new WeakMap<ComputationInternal<unknown>, Set<ComputationInternal<unknown>>>();
-let children = new WeakMap<ComputationInternal<unknown>, Set<ComputationInternal<unknown>>>();
-let ids = new WeakMap<any, string>();
+export let parents = new WeakMap<ComputationInternal<unknown>, Set<ComputationInternal<unknown>>>();
+export let children = new WeakMap<ComputationInternal<unknown>, Set<ComputationInternal<unknown>>>();
+export const ids = new WeakMap<any, string>();
+export const accessorStreams = new WeakMap<any, any>()
+export const streamAccessors = new WeakMap<any, any>()
 const randomId = () => Math.random().toString(15)
-const record = (x:any) => {
+const record = <T>(stream: StreamInternal<T>, x: () => any ) => {
     ids.set(x, randomId())
+    accessorStreams.set(x, stream)
+    streamAccessors.set(stream, x)
     return x
 }
-
-let computingOnComputation : boolean = false;
 
 export class StreamError extends Error {}
 export class CleanupWithoutComputationContext extends StreamError {}
@@ -207,7 +209,6 @@ function computeDependents(stream: StreamInternal<unknown>){
 
     while (stack.length) {
         let x = stack.shift() as ComputationInternal<unknown>;
-
         
         if (x.tag !== 'GeneratorComputation') {
             stack.push(...xet(dependents, x, () => new Set()))
@@ -218,8 +219,6 @@ function computeDependents(stream: StreamInternal<unknown>){
                 // be added as a child ever again
                 continue;
             }
-
-            toRun.add(x)
             
         }
 
@@ -243,8 +242,6 @@ export function data<T>(value?: T, equality: EqualityCheck<T> = strictEquality){
         next: value,
         value
     }
-
-    ids.set(stream, randomId())
 
     let accessor = (...args: T[] | [(( x?: T ) => T )] ) => {
 
@@ -279,14 +276,12 @@ export function data<T>(value?: T, equality: EqualityCheck<T> = strictEquality){
                 .add(active[0])
 
             return stream.next
-        } else if ( computingOnComputation ) {
-            return stream.next
         } else {
             return stream.value
         }
     }
 
-    return record(accessor)
+    return record(stream, accessor)
 }
 
 type SyncComputationVisitor<T> =
@@ -325,8 +320,6 @@ export function computation<T>( fn: SyncComputationVisitor<T>, seed: T ) : Compu
             }
         }
     }
-
-    ids.set(stream, randomId())
 
     // whatever active was when this was defined
     // is our parents
@@ -367,15 +360,13 @@ export function computation<T>( fn: SyncComputationVisitor<T>, seed: T ) : Compu
         stream.compute()
     }
 
-    return record(() => {
+    return record(stream, () => {
 
         if ( active[0] ) {
             xet(dependents, stream, () => new Set())
                 .add(active[0])
 
             return stream.next!;
-        } else if ( computingOnComputation ) {
-            return stream.next!
         } else {
             return stream.value!
         }
@@ -452,8 +443,6 @@ export function generator<T>( _fn: StreamGeneratorVisitor<T>, seed?: T ) : Compu
         }
     }
 
-    ids.set(stream, randomId())
-
     async function iterate<T>(it: StreamIterator<T>){
         let value, done, next;
         do {
@@ -492,13 +481,11 @@ export function generator<T>( _fn: StreamGeneratorVisitor<T>, seed?: T ) : Compu
 
     stream.compute()
 
-    return record(() => {
+    return record(stream, () => {
         if (active[0]) {
             xet(dependents, stream, () => new Set())
                 .add(active[0])
 
-            return stream.next
-        } else if ( computingOnComputation ) {
             return stream.next
         }
         return stream.value
