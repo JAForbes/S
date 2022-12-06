@@ -340,8 +340,8 @@ export function computation<T>(
 
   // so we can dispose this when the root is
   // disposed
-  xet(rootChildren, activeRoot, () => new Set()).add(stream);
   if (activeRoot != null) {
+    xet(rootChildren, activeRoot, () => new Set()).add(stream);
     rootOfStream.set(stream, activeRoot);
   }
 
@@ -481,9 +481,9 @@ export function generator<T>(
 
   // so we can dispose this when the root is
   // disposed
-  xet(rootChildren, activeRoot, () => new Set()).add(stream);
 
   if (activeRoot != null) {
+    xet(rootChildren, activeRoot, () => new Set()).add(stream);
     rootOfStream.set(stream, activeRoot);
   }
 
