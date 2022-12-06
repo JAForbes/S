@@ -1,4 +1,10 @@
 
+# Release v0.0.12
+
+### Patch Changes
+
+#### [Fix weakmap key invalid when no root (@JAForbes)](https://github.com/JAForbes/S/pull/29)
+
 # Release v0.0.11
 
 ### Patch Changes
