@@ -1,4 +1,12 @@
 
+# Release v0.0.11
+
+### Patch Changes
+
+#### [Disable mandatorty root. (@JAForbes)](https://github.com/JAForbes/S/pull/27)
+
+Was causing issues with mithril's async rendering model.
+
 # Release v0.0.10
 
 ### Patch Changes
