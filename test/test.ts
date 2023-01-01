@@ -1082,3 +1082,37 @@ test('Max ticks', t => {
     t.equals(S.stats.ticks, S.MAX_TICKS+1, 'Caught at max ticks')
     t.end()
 })
+
+test('https://github.com/JAForbes/S/issues/31', t => {
+
+    const a = S.data(1)
+
+    const { b,c,d } = S.root(() => {
+
+    const b = S.computation(() => {
+        return a() * 1
+    })
+
+    const c = S.computation(() => {
+        return b()! * 2
+    })
+
+    const d = S.computation(() => {
+        return a() + c()!
+    })
+
+        return { b, c, d }
+    })
+
+    Object.entries({ a,b, c,d }).map( ([k,v]) => S.id(v,k) )
+
+    t.equals(c()!, 2, 'c propagated')
+    t.equals(d()!, 3, 'd propagated')
+
+    a(2)
+
+    t.equals(c()!, 4, 'c propagated')
+    t.equals(d()!, 6, 'd propagated')
+
+    t.end()
+})
