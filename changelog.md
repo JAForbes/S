@@ -1,4 +1,10 @@
 
+# Release v0.0.13
+
+### Patch Changes
+
+#### [Ensure dependent computations update in correct order (@JAForbes)](https://github.com/JAForbes/S/pull/32)
+
 # Release v0.0.12
 
 ### Patch Changes
