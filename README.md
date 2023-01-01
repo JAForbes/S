@@ -197,6 +197,15 @@ S.id(a); // kjhjkgasd
 
 This id is not globally unique, or cryptographically random, its just a debugging thing.
 
+You can also overwrite the generated id with your own to make debugging easier:
+
+```js
+S.id(a, 'a')
+S.id() // 'a'
+```
+
+> 🤔 In future we may just expose the id map instead of having this getter setter
+
 ### `S.sample`
 
 Read the value of a signal within a computation without treating it as a dependency of that computation.
